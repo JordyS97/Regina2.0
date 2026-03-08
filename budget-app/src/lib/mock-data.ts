@@ -98,7 +98,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2024-001',
         title: 'Q3 Digital Ad Campaign',
-        type: 'Local Event',
+        type: 'Event Dealer (Showroom Event, Yasinan, dll)',
         amount: 150000000,
         glAccountCode: '7110900000', // Adv&Promo:Material-Campaign-New Unit
         description: 'Funding for Google and Meta Ads for the Q3 product launch in the APAC region.',
@@ -119,7 +119,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2024-002',
         title: 'Annual Tech Conference Sponsorship',
-        type: 'Exhibition',
+        type: 'Pengajuan Matprom',
         amount: 250000000,
         glAccountCode: '7090101000', // Transportation & Travelling:Domestic-Ticket
         description: 'Platinum sponsorship for the upcoming DevCon, including a large booth and speaking slot.',
@@ -137,7 +137,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2024-003',
         title: 'New Developer Laptops',
-        type: 'Asset Repair',
+        type: 'Perbaikan AC / mobil / motor / asset lain',
         amount: 320000000,
         glAccountCode: '7140600000', // Tools & Other Equipment:Furniture & Fixture
         description: 'Replacement of 10 laptops for the engineering team.',
@@ -157,7 +157,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2024-004',
         title: 'Stationery Restock Q3',
-        type: 'Stationary',
+        type: 'Peralatan Kantor/ATK',
         amount: 12000000,
         glAccountCode: '7220500000', // Office Expense:Administrative
         description: 'Bulk order of pens, notepads, and printer ink.',
@@ -174,7 +174,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2024-005',
         title: 'Branch Office Renovation',
-        type: 'Asset Repair',
+        type: 'Perbaikan AC / mobil / motor / asset lain',
         amount: 85000000,
         glAccountCode: '7120000000', // Repair & Maintenance:Material
         description: 'Painting and minor repairs for the main customer lobby.',
@@ -194,7 +194,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2023-001',
         title: 'Year End Bonus Campaign',
-        type: 'Internal Memo',
+        type: 'Memo Internal (AMIC)',
         amount: 50000000,
         glAccountCode: '7001000000', // Employee Comp:Honorarium
         description: 'End of year sales incentives.',
@@ -211,7 +211,7 @@ export const MOCK_PROPOSALS: Proposal[] = [
     {
         id: 'PROP-2023-002',
         title: 'Regional Ad Campaign',
-        type: 'Local Event',
+        type: 'Event Dealer (Showroom Event, Yasinan, dll)',
         amount: 95000000,
         glAccountCode: '7111000000', // Advertising & Promotion:Material-Adv & Promotion
         description: 'Advertising promotional materials.',

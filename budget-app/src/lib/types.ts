@@ -2,7 +2,16 @@ export type Role = 'User' | 'Supervisor' | 'SubDeptHead' | 'FinanceHead' | 'Regi
 
 export type ProposalStatus = 'Pending Supervisor' | 'Pending Sub Dept' | 'Pending Finance' | 'Pending Region' | 'Approved' | 'Rejected';
 
-export type ProposalType = 'Stationary' | 'Local Event' | 'Exhibition' | 'Asset Repair' | 'Internal Memo';
+export type ProposalType =
+    | 'Peralatan Kantor/ATK'
+    | 'Event Dealer (Showroom Event, Yasinan, dll)'
+    | 'Memo Internal (AMIC)'
+    | 'Pembelian Air Konsumen'
+    | 'Sewa Gudang'
+    | 'Perbaikan AC / mobil / motor / asset lain'
+    | 'Pengajuan Matprom'
+    | 'Pembelian Paket Data'
+    | 'Lain-lain';
 
 export interface User {
     id: string;
@@ -24,9 +33,22 @@ export type Dealer =
     | 'H533-SO MASBAGIK'
     | 'H536-SO SUMBAWA';
 
+export interface ItemizedCost {
+    id: string;
+    item: string;
+    qty: number;
+    price: number;
+    total: number;
+    m1?: string;
+}
+
 export interface Proposal {
     id: string;
     title: string;
+    subtitle?: string;
+    background?: string;
+    budgetSource?: 'GL Account' | 'Added Fee' | 'Retail JoinProm';
+    items?: ItemizedCost[];
     type: ProposalType;
     amount: number;
     glAccountCode: string;
