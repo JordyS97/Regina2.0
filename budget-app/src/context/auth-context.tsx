@@ -84,9 +84,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const logout = async () => {
         if (auth) {
-            await firebaseSignOut(auth);
+            try {
+                // Instantly clear local state to trigger the redirect logic
+                setUser(null);
+                setLoading(true); // Temporarily mask the UI during signout
+
+                await firebaseSignOut(auth);
+                // After successful signout, Firebase removes tokens from storage.
+                // Redirect securely to login.
+                router.replace('/login');
+            } catch (error) {
+                console.error("Signout Error:", error);
+            } finally {
+                setLoading(false);
+            }
+        } else {
+            // Fallback for mocked cases
             setUser(null);
-            router.push('/login');
+            router.replace('/login');
         }
     };
 
