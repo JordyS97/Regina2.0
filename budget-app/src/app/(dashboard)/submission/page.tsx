@@ -71,15 +71,17 @@ export default function SubmissionPage() {
         setItems(newItems);
     };
 
-    // Recalculate global amount whenever items change or budget source changes
+    // Recalculate global amount whenever items change
     useEffect(() => {
-        if (budgetSource === 'GL Account') {
-            const sum = items.reduce((acc, curr) => acc + (curr.total || 0), 0);
-            setAmount(sum);
-        } else if (budgetSource === 'Added Fee (Biaya Titipan C6)' && excelFile === null) {
-            setAmount(0); // Reset if no file is uploaded yet
+        const sum = items.reduce((acc, curr) => acc + (curr.total || 0), 0);
+        setAmount(sum);
+    }, [items]);
+
+    useEffect(() => {
+        if (budgetSource !== 'GL Account' && budgetSource !== 'Added Fee (Biaya Titipan C6)') {
+            setCurrentBalance('');
         }
-    }, [items, budgetSource, excelFile]);
+    }, [budgetSource]);
 
     // --- Excel Parsing Logic (For Added Fee) ---
     const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -87,7 +89,7 @@ export default function SubmissionPage() {
         setExcelError('');
         if (!file) {
             setExcelFile(null);
-            setAmount(0);
+            setCurrentBalance('');
             return;
         }
 
@@ -131,14 +133,14 @@ export default function SubmissionPage() {
 
                 if (!foundJumlah) {
                     setExcelError('Could not find a "JUMLAH" column in the uploaded file.');
-                    setAmount(0);
+                    setCurrentBalance('');
                 } else {
-                    setAmount(sum);
+                    setCurrentBalance(sum);
                 }
             } catch (err) {
                 console.error("Error parsing Excel:", err);
                 setExcelError('Failed to parse the file. Please ensure it is a valid Excel/CSV.');
-                setAmount(0);
+                setCurrentBalance('');
             }
         };
         reader.readAsBinaryString(file);
@@ -165,8 +167,8 @@ export default function SubmissionPage() {
             return;
         }
 
-        if (budgetSource === 'GL Account' && typeof currentBalance === 'number' && amount > currentBalance) {
-            alert("Error: Requested amount exceeds the current budget balance you entered.");
+        if ((budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' && amount > currentBalance) {
+            alert("Error: Requested amount exceeds the available budget balance.");
             return;
         }
 
@@ -235,8 +237,8 @@ export default function SubmissionPage() {
         }
     };
 
-    const isExceeding = budgetSource === 'GL Account' && typeof currentBalance === 'number' && amount > currentBalance;
-    const remainingAfter = budgetSource === 'GL Account' && typeof currentBalance === 'number' ? currentBalance - amount : null;
+    const isExceeding = (budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' && amount > currentBalance;
+    const remainingAfter = (budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' ? currentBalance - amount : null;
 
     return (
         <div className="max-w-5xl mx-auto space-y-6">
@@ -353,115 +355,6 @@ export default function SubmissionPage() {
                                             />
                                         </div>
                                     </div>
-
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <label className="text-sm font-semibold text-slate-900">Adapun rincian biaya yang dibutuhkan dari kegiatan diatas adalah:</label>
-                                        </div>
-                                        <div className="border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm">
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-sm text-left">
-                                                    <thead className="bg-slate-100 text-slate-900 font-bold border-b border-slate-300 text-xs uppercase tracking-wider text-center">
-                                                        <tr>
-                                                            <th className="px-3 py-3 w-12 border-r border-slate-300">NO</th>
-                                                            <th className="px-4 py-3 border-r border-slate-300 w-1/3 text-left">ITEM</th>
-                                                            <th className="px-3 py-3 border-r border-slate-300 w-24">QTY</th>
-                                                            <th className="px-4 py-3 border-r border-slate-300 w-40">HARGA SATUAN</th>
-                                                            <th className="px-4 py-3 border-r border-slate-300 w-40">TOTAL</th>
-                                                            <th className="px-4 py-3 border-r border-slate-300 w-24">M-1</th>
-                                                            <th className="px-3 py-3 w-12 text-center"></th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {items.map((item, idx) => (
-                                                            <tr key={item.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 transition-colors">
-                                                                <td className="px-3 py-2 border-r border-slate-200 text-center text-slate-500 font-medium">
-                                                                    {idx + 1}
-                                                                </td>
-                                                                <td className="p-0 border-r border-slate-200">
-                                                                    <input
-                                                                        type="text"
-                                                                        required
-                                                                        className="w-full h-10 px-3 outline-none bg-transparent focus:bg-blue-50/50"
-                                                                        value={item.item}
-                                                                        placeholder="Nama barang / jasa"
-                                                                        onChange={(e) => handleItemChange(idx, 'item', e.target.value)}
-                                                                    />
-                                                                </td>
-                                                                <td className="p-0 border-r border-slate-200">
-                                                                    <input
-                                                                        type="number"
-                                                                        min="1"
-                                                                        required
-                                                                        className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-blue-50/50"
-                                                                        value={item.qty || ''}
-                                                                        onChange={(e) => handleItemChange(idx, 'qty', parseInt(e.target.value) || 0)}
-                                                                    />
-                                                                </td>
-                                                                <td className="p-0 border-r border-slate-200 relative">
-                                                                    <span className="absolute left-3 top-2.5 text-slate-400 text-xs">Rp</span>
-                                                                    <input
-                                                                        type="number"
-                                                                        min="0"
-                                                                        required
-                                                                        className="w-full h-10 pl-8 pr-3 text-right outline-none bg-transparent focus:bg-blue-50/50"
-                                                                        value={item.price || ''}
-                                                                        onChange={(e) => handleItemChange(idx, 'price', parseInt(e.target.value) || 0)}
-                                                                    />
-                                                                </td>
-                                                                <td className="px-4 py-2 border-r border-slate-200 text-right font-semibold text-slate-700 bg-slate-50/50">
-                                                                    {formatCurrency(item.total).replace('Rp', '')}
-                                                                </td>
-                                                                <td className="p-0 border-r border-slate-200">
-                                                                    <input
-                                                                        type="text"
-                                                                        className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-blue-50/50"
-                                                                        value={item.m1}
-                                                                        onChange={(e) => handleItemChange(idx, 'm1', e.target.value)}
-                                                                    />
-                                                                </td>
-                                                                <td className="px-2 py-2 text-center">
-                                                                    {items.length > 1 && (
-                                                                        <button type="button" onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50">
-                                                                            <Trash2 className="w-4 h-4" />
-                                                                        </button>
-                                                                    )}
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                        {/* Table Footer Totals */}
-                                                        <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
-                                                            <td colSpan={4} className="px-4 py-3 text-right uppercase tracking-wider">TOTAL KESELURUHAN</td>
-                                                            <td className="px-4 py-3 text-right border-x border-slate-300 text-blue-700">{formatCurrency(amount).replace('Rp', '')}</td>
-                                                            <td colSpan={2}></td>
-                                                        </tr>
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            <div className="bg-white p-2 border-t border-slate-200 flex justify-center">
-                                                <Button type="button" variant="ghost" size="sm" onClick={addItem} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-full rounded-md border border-dashed border-blue-200">
-                                                    <Plus className="w-4 h-4 mr-2" /> Tambah Baris
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Preview Check for GL Account */}
-                                    {remainingAfter !== null && (
-                                        <div className={`p-4 rounded-xl border flex items-center justify-between ${isExceeding ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                                            <div className="flex items-center gap-3">
-                                                <span className="font-semibold text-slate-700">Estimasi Sisa Saldo:</span>
-                                                <span className={`font-mono text-lg font-bold ${isExceeding ? 'text-red-600' : 'text-emerald-700'}`}>{formatCurrency(remainingAfter)}</span>
-                                            </div>
-                                            <div>
-                                                {isExceeding ? (
-                                                    <Badge variant="destructive" className="flex items-center gap-1.5 px-3 py-1"><AlertTriangle className="w-4 h-4" /> Dana Tidak Mencukupi</Badge>
-                                                ) : (
-                                                    <Badge variant="success" className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 border-emerald-200"><CheckCircle2 className="w-4 h-4" /> Saldo Aman</Badge>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
                                 </div>
                             )}
 
@@ -476,7 +369,7 @@ export default function SubmissionPage() {
                                             <div>
                                                 <h3 className="text-base font-semibold text-slate-900">Upload Lampiran Excel (.xlsx / .csv)</h3>
                                                 <p className="text-sm text-slate-500 mt-1">
-                                                    Sistem akan secara otomatis membaca total nilai dari kolom bernama <span className="font-mono font-bold text-slate-700">JUMLAH</span>.
+                                                    Sistem akan secara otomatis membaca total nilai dari kolom bernama <span className="font-mono font-bold text-slate-700">JUMLAH</span> untuk Budget Tersedia.
                                                 </p>
                                             </div>
                                             <Input
@@ -491,36 +384,135 @@ export default function SubmissionPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                                        <span className="text-sm font-medium text-slate-600 text-right w-full pr-4">Total Amount (Automated calculation):</span>
-                                        <span className="font-mono text-xl font-bold text-slate-900 shrink-0">{formatCurrency(amount)}</span>
-                                    </div>
+                                    {typeof currentBalance === 'number' && (
+                                        <div className="flex items-center justify-between p-4 bg-slate-50 border border-blue-200 rounded-lg">
+                                            <span className="text-sm font-semibold text-slate-700 text-right w-full pr-4">Total Budget Available dari Excel:</span>
+                                            <span className="font-mono text-xl font-bold text-slate-900 shrink-0">{formatCurrency(currentBalance)}</span>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
                             {/* --- SCENARIO C: RETAIL JOINPROM --- */}
                             {budgetSource === 'Retail JoinProm' && (
-                                <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-                                    <h3 className="text-base font-semibold text-slate-900 border-b border-slate-100 pb-3 mb-4">Input Submission Balance</h3>
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-slate-600">Requested Amount / Submission Balance (Rp) <span className="text-red-500">*</span></label>
-                                        <div className="relative max-w-sm">
-                                            <span className="absolute left-4 top-2.5 text-slate-500 font-medium">Rp</span>
-                                            <Input
-                                                required
-                                                type="number"
-                                                min="1"
-                                                step="1"
-                                                placeholder="0"
-                                                className="pl-12 text-lg font-bold"
-                                                value={amount || ''}
-                                                onChange={(e) => setAmount(e.target.value ? Number(e.target.value) : 0)}
-                                            />
-                                        </div>
-                                        <p className="text-xs text-slate-400 mt-1">Masukkan total nominal secara langsung.</p>
+                                <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200 bg-blue-50 p-5 rounded-xl border border-blue-200 flex items-center gap-3">
+                                    <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
+                                    <div>
+                                        <h3 className="text-sm font-bold text-blue-900">Retail JoinProm Terpilih</h3>
+                                        <p className="text-xs text-blue-700 mt-0.5">Silakan tambahkan item kebutuhan pada tabel Rincian Biaya Pengajuan di bawah ini.</p>
                                     </div>
                                 </div>
                             )}
+
+                            {/* UNIVERSAL TABLE FOR ALL BUDGET SOURCES */}
+                            <div className="space-y-5 pt-6 border-t border-slate-200 mt-8">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-base font-bold text-slate-900">Rincian Biaya Pengajuan:</label>
+                                </div>
+                                <div className="border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm transition-all">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-100 text-slate-900 font-bold border-b border-slate-300 text-xs uppercase tracking-wider text-center">
+                                                <tr>
+                                                    <th className="px-3 py-3 w-12 border-r border-slate-300">NO</th>
+                                                    <th className="px-4 py-3 border-r border-slate-300 w-1/3 text-left">ITEM</th>
+                                                    <th className="px-3 py-3 border-r border-slate-300 w-24">QTY</th>
+                                                    <th className="px-4 py-3 border-r border-slate-300 w-40">HARGA SATUAN</th>
+                                                    <th className="px-4 py-3 border-r border-slate-300 w-40">TOTAL</th>
+                                                    <th className="px-4 py-3 border-r border-slate-300 w-24">M-1</th>
+                                                    <th className="px-3 py-3 w-12 text-center"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {items.map((item, idx) => (
+                                                    <tr key={item.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 transition-colors">
+                                                        <td className="px-3 py-2 border-r border-slate-200 text-center text-slate-500 font-medium">
+                                                            {idx + 1}
+                                                        </td>
+                                                        <td className="p-0 border-r border-slate-200">
+                                                            <input
+                                                                type="text"
+                                                                required
+                                                                className="w-full h-10 px-3 outline-none bg-transparent focus:bg-blue-50/50"
+                                                                value={item.item}
+                                                                placeholder="Nama barang / jasa"
+                                                                onChange={(e) => handleItemChange(idx, 'item', e.target.value)}
+                                                            />
+                                                        </td>
+                                                        <td className="p-0 border-r border-slate-200">
+                                                            <input
+                                                                type="number"
+                                                                min="1"
+                                                                required
+                                                                className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-blue-50/50"
+                                                                value={item.qty || ''}
+                                                                onChange={(e) => handleItemChange(idx, 'qty', parseInt(e.target.value) || 0)}
+                                                            />
+                                                        </td>
+                                                        <td className="p-0 border-r border-slate-200 relative">
+                                                            <span className="absolute left-3 top-2.5 text-slate-400 text-xs">Rp</span>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                required
+                                                                className="w-full h-10 pl-8 pr-3 text-right outline-none bg-transparent focus:bg-blue-50/50"
+                                                                value={item.price || ''}
+                                                                onChange={(e) => handleItemChange(idx, 'price', parseInt(e.target.value) || 0)}
+                                                            />
+                                                        </td>
+                                                        <td className="px-4 py-2 border-r border-slate-200 text-right font-semibold text-slate-700 bg-slate-50/50">
+                                                            {formatCurrency(item.total).replace('Rp', '')}
+                                                        </td>
+                                                        <td className="p-0 border-r border-slate-200">
+                                                            <input
+                                                                type="text"
+                                                                className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-blue-50/50"
+                                                                value={item.m1}
+                                                                onChange={(e) => handleItemChange(idx, 'm1', e.target.value)}
+                                                            />
+                                                        </td>
+                                                        <td className="px-2 py-2 text-center">
+                                                            {items.length > 1 && (
+                                                                <button type="button" onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {/* Table Footer Totals */}
+                                                <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
+                                                    <td colSpan={4} className="px-4 py-3 text-right uppercase tracking-wider">TOTAL PERMINTAAN DANA</td>
+                                                    <td className="px-4 py-3 text-right border-x border-slate-300 text-blue-700">{formatCurrency(amount).replace('Rp', '')}</td>
+                                                    <td colSpan={2}></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="bg-white p-2 border-t border-slate-200 flex justify-center">
+                                        <Button type="button" variant="ghost" size="sm" onClick={addItem} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-full rounded-md border border-dashed border-blue-200">
+                                            <Plus className="w-4 h-4 mr-2" /> Tambah Baris
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                {/* Preview Check for Budget Balances */}
+                                {remainingAfter !== null && (
+                                    <div className={`p-4 rounded-xl border flex items-center justify-between animate-in fade-in duration-300 ${isExceeding ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-semibold text-slate-700">Estimasi Sisa Saldo:</span>
+                                            <span className={`font-mono text-lg font-bold ${isExceeding ? 'text-red-600' : 'text-emerald-700'}`}>{formatCurrency(remainingAfter)}</span>
+                                        </div>
+                                        <div>
+                                            {isExceeding ? (
+                                                <Badge variant="destructive" className="flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-800 border-red-200"><AlertTriangle className="w-4 h-4" /> Dana Tidak Mencukupi</Badge>
+                                            ) : (
+                                                <Badge variant="success" className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 border-emerald-200"><CheckCircle2 className="w-4 h-4" /> Saldo Aman</Badge>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Section 3: Universal Supporting Document */}
