@@ -16,7 +16,7 @@ import {
     DownloadCloud, TrendingUp, DollarSign, Activity, FilterX,
     Globe, Users, FileCheck, AlertTriangle
 } from 'lucide-react';
-import { formatCurrency, downloadCsv } from '@/lib/utils';
+import { formatCurrency, downloadCsv, shortenDealer, glAxisLabels } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import {
@@ -30,6 +30,9 @@ import {
 } from '@/lib/proposals';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'];
+
+/** Bars that still read clearly inside the fixed-height category card. */
+const TOP_CATEGORY_LIMIT = 8;
 
 export default function SuperAdminDashboardPage() {
     const { user } = useAuth();
@@ -158,6 +161,17 @@ export default function SuperAdminDashboardPage() {
         Amount: spendingDataMap[key]
     })).sort((a, b) => b.Amount - a.Amount);
 
+    // The card is a fixed 350px tall — past this many bars they compress into an
+    // unreadable stack, so show the ranking's head and say so in the subtitle.
+    // Axis labels are shortened to distinct forms; the tooltip keeps the full name.
+    const topSpendingRows = spendingData.slice(0, TOP_CATEGORY_LIMIT);
+    const topSpendingLabels = glAxisLabels(topSpendingRows.map(row => row.name));
+    const topSpendingData = topSpendingRows.map((row, i) => ({
+        ...row,
+        label: topSpendingLabels[i],
+        fullName: row.name,
+    }));
+
     // 4. Dealer Distribution (Donut Chart)
     const dealerDataMap = filteredProposals.reduce((acc, p) => {
         acc[p.dealer] = (acc[p.dealer] || 0) + p.amount;
@@ -180,8 +194,13 @@ export default function SuperAdminDashboardPage() {
         if (active && payload && payload.length) {
             return (
                 <div className="bg-white border border-slate-200 p-3 shadow-md rounded-lg text-sm z-50">
-                    {label && <p className="font-semibold text-slate-800 mb-1">{label}</p>}
-                    {!label && payload[0].name && <p className="font-semibold text-slate-800 mb-1">{payload[0].name}</p>}
+                    {/* Axis labels are shortened, so show the row's full name when it has one. */}
+                    {(payload[0].payload?.fullName || label) && (
+                        <p className="font-semibold text-slate-800 mb-1">{payload[0].payload?.fullName || label}</p>
+                    )}
+                    {!label && !payload[0].payload?.fullName && payload[0].name && (
+                        <p className="font-semibold text-slate-800 mb-1">{payload[0].name}</p>
+                    )}
                     <p className="text-slate-600">{formatCurrency(payload[0].value)}</p>
                 </div>
             );
@@ -419,17 +438,31 @@ export default function SuperAdminDashboardPage() {
                 <Card className="col-span-1 lg:col-span-2">
                     <CardHeader>
                         <CardTitle>Top Spending Categories</CardTitle>
-                        <CardDescription>G/L account expenditure ranked highest to lowest.</CardDescription>
+                        <CardDescription>
+                            {spendingData.length > TOP_CATEGORY_LIMIT
+                                ? `${TOP_CATEGORY_LIMIT} G/L account teratas dari ${spendingData.length} yang terpakai.`
+                                : 'G/L account expenditure ranked highest to lowest.'}
+                        </CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
                         {spendingData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={spendingData} layout="vertical" margin={{ top: 20, right: 30, left: 100, bottom: 5 }}>
+                                {/* YAxis.width reserves the label gutter; margin.left cannot do
+                                    that job, which is why long G/L names used to spill out. */}
+                                <BarChart data={topSpendingData} layout="vertical" margin={{ top: 10, right: 40, left: 8, bottom: 5 }}>
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={yAxisFormatter} />
-                                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11, width: 140 }} />
+                                    <YAxis
+                                        type="category"
+                                        dataKey="label"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        width={170}
+                                        interval={0}
+                                        tick={{ fill: '#64748b', fontSize: 11 }}
+                                    />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f1f5f9' }} />
-                                    <Bar dataKey="Amount" fill="#0f172a" radius={[0, 4, 4, 0]} barSize={20} />
+                                    <Bar dataKey="Amount" fill="#0f172a" radius={[0, 4, 4, 0]} barSize={18} />
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (
@@ -450,9 +483,9 @@ export default function SuperAdminDashboardPage() {
                                     <Pie
                                         data={dealerData}
                                         cx="50%"
-                                        cy="45%"
-                                        innerRadius={60}
-                                        outerRadius={100}
+                                        cy="42%"
+                                        innerRadius={52}
+                                        outerRadius={86}
                                         paddingAngle={3}
                                         dataKey="value"
                                         stroke="none"
@@ -462,11 +495,17 @@ export default function SuperAdminDashboardPage() {
                                         ))}
                                     </Pie>
                                     <Tooltip content={<CustomTooltip />} />
+                                    {/* Nine branches wrap to ~3 rows; reserve that height so the
+                                        legend shrinks the donut instead of escaping the card. */}
                                     <Legend
                                         verticalAlign="bottom"
-                                        height={36}
+                                        height={92}
                                         iconType="circle"
-                                        formatter={(value) => <span className="text-slate-700 text-xs">{value}</span>}
+                                        iconSize={8}
+                                        wrapperStyle={{ maxHeight: 92, overflowY: 'auto', lineHeight: '18px', paddingTop: 4 }}
+                                        formatter={(value: string) => (
+                                            <span className="text-slate-700 text-[11px]" title={value}>{shortenDealer(value)}</span>
+                                        )}
                                     />
                                 </RechartsPieChart>
                             </ResponsiveContainer>
@@ -523,7 +562,9 @@ export default function SuperAdminDashboardPage() {
                     </CardHeader>
                     <CardContent className="h-[280px] overflow-y-auto">
                         <div className="space-y-3">
-                            {MOCK_GL_ACCOUNTS
+                            {/* Copy first — sort() is in-place and would permanently reorder the
+                                shared master list used by the submission form's G/L dropdown. */}
+                            {[...MOCK_GL_ACCOUNTS]
                                 .sort((a, b) => (a.budgetRemaining / a.totalBudget) - (b.budgetRemaining / b.totalBudget))
                                 .slice(0, 10)
                                 .map((account) => {

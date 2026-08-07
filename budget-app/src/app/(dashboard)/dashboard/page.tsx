@@ -10,7 +10,7 @@ import { MOCK_GL_ACCOUNTS, MOCK_DEALERS } from '@/lib/mock-data';
 import { Proposal } from '@/lib/types';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
 import { DownloadCloud, TrendingUp, DollarSign, PieChart, Activity, FilterX } from 'lucide-react';
-import { formatCurrency, downloadCsv } from '@/lib/utils';
+import { formatCurrency, downloadCsv, truncateLabel, glAxisLabels } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import {
@@ -24,6 +24,9 @@ import {
 } from '@/lib/proposals';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+/** Bars that still read clearly inside the fixed-height category card. */
+const TOP_CATEGORY_LIMIT = 8;
 
 export default function DashboardPage() {
     const { user } = useAuth();
@@ -151,6 +154,17 @@ export default function DashboardPage() {
         Amount: spendingDataMap[key]
     })).sort((a, b) => b.Amount - a.Amount);
 
+    // The card is a fixed 350px tall — past this many bars they compress into an
+    // unreadable stack, so show the ranking's head and say so in the subtitle.
+    // Axis labels are shortened to distinct forms; the tooltip keeps the full name.
+    const topSpendingRows = spendingData.slice(0, TOP_CATEGORY_LIMIT);
+    const topSpendingLabels = glAxisLabels(topSpendingRows.map(row => row.name));
+    const topSpendingData = topSpendingRows.map((row, i) => ({
+        ...row,
+        label: topSpendingLabels[i],
+        fullName: row.name,
+    }));
+
     // 4. Submission Volumes (Donut Chart)
     const categoryDataMap = filteredProposals.reduce((acc, p) => {
         acc[p.type] = (acc[p.type] || 0) + p.amount;
@@ -166,8 +180,13 @@ export default function DashboardPage() {
         if (active && payload && payload.length) {
             return (
                 <div className="bg-white border border-slate-200 p-3 shadow-md rounded-lg text-sm z-50">
-                    {label && <p className="font-semibold text-slate-800 mb-1">{label}</p>}
-                    {!label && payload[0].name && <p className="font-semibold text-slate-800 mb-1">{payload[0].name}</p>}
+                    {/* Axis labels are shortened, so show the row's full name when it has one. */}
+                    {(payload[0].payload?.fullName || label) && (
+                        <p className="font-semibold text-slate-800 mb-1">{payload[0].payload?.fullName || label}</p>
+                    )}
+                    {!label && !payload[0].payload?.fullName && payload[0].name && (
+                        <p className="font-semibold text-slate-800 mb-1">{payload[0].name}</p>
+                    )}
                     <p className="text-slate-600">{formatCurrency(payload[0].value)}</p>
                 </div>
             );
@@ -348,18 +367,30 @@ export default function DashboardPage() {
                     <CardHeader>
                         <CardTitle>Top Spending Categories</CardTitle>
                         <CardDescription>
-                            Expenditure ranked from highest to lowest.
+                            {spendingData.length > TOP_CATEGORY_LIMIT
+                                ? `${TOP_CATEGORY_LIMIT} G/L account teratas dari ${spendingData.length} yang terpakai.`
+                                : 'Expenditure ranked from highest to lowest.'}
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
                         {spendingData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={spendingData} layout="vertical" margin={{ top: 20, right: 30, left: 60, bottom: 5 }}>
+                                {/* YAxis.width reserves the label gutter; margin.left cannot do
+                                    that job, which is why long G/L names used to spill out. */}
+                                <BarChart data={topSpendingData} layout="vertical" margin={{ top: 10, right: 40, left: 8, bottom: 5 }}>
                                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                                     <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={yAxisFormatter} />
-                                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12, width: 90 }} />
+                                    <YAxis
+                                        type="category"
+                                        dataKey="label"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        width={170}
+                                        interval={0}
+                                        tick={{ fill: '#64748b', fontSize: 11 }}
+                                    />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f1f5f9' }} />
-                                    <Bar dataKey="Amount" fill="#0f172a" radius={[0, 4, 4, 0]} barSize={20} />
+                                    <Bar dataKey="Amount" fill="#0f172a" radius={[0, 4, 4, 0]} barSize={18} />
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (
@@ -383,9 +414,9 @@ export default function DashboardPage() {
                                     <Pie
                                         data={categoryData}
                                         cx="50%"
-                                        cy="45%"
-                                        innerRadius={70}
-                                        outerRadius={110}
+                                        cy="40%"
+                                        innerRadius={48}
+                                        outerRadius={80}
                                         paddingAngle={3}
                                         dataKey="value"
                                         stroke="none"
@@ -395,11 +426,17 @@ export default function DashboardPage() {
                                         ))}
                                     </Pie>
                                     <Tooltip content={<CustomTooltip />} />
+                                    {/* Proposal type names run to ~40 characters, so they are
+                                        clipped here and the reserved height matches the rows. */}
                                     <Legend
                                         verticalAlign="bottom"
-                                        height={36}
+                                        height={104}
                                         iconType="circle"
-                                        formatter={(value) => <span className="text-slate-700 text-sm">{value}</span>}
+                                        iconSize={8}
+                                        wrapperStyle={{ maxHeight: 104, overflowY: 'auto', lineHeight: '18px', paddingTop: 4 }}
+                                        formatter={(value: string) => (
+                                            <span className="text-slate-700 text-[11px]" title={value}>{truncateLabel(value, 24)}</span>
+                                        )}
                                     />
                                 </RechartsPieChart>
                             </ResponsiveContainer>
