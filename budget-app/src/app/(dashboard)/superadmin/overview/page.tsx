@@ -6,8 +6,9 @@ import { useAuth } from '@/context/auth-context';
 import { MOCK_GL_ACCOUNTS } from '@/lib/mock-data';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Activity, DollarSign, Target, TrendingUp } from 'lucide-react';
+import { Activity, Wallet, Sprout, TrendingUp } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { PageHeading, StatCard, UtilizationBar } from '@/components/ui/stat-card';
 
 export default function OverviewPage() {
     const { user } = useAuth();
@@ -17,7 +18,7 @@ export default function OverviewPage() {
     if (user.role !== 'SuperAdmin') {
         return (
             <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-slate-500">Access Restricted. Super Admins only.</div>
+                <div className="text-slate-500">Akses terbatas. Khusus Super Admin.</div>
             </div>
         );
     }
@@ -29,69 +30,59 @@ export default function OverviewPage() {
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">System Overview</h2>
-                <p className="text-slate-500 mt-1">Enterprise-wide budget consumption and health.</p>
-            </div>
+            <PageHeading
+                title="Ikhtisar Sistem"
+                description="Konsumsi dan kesehatan budget di seluruh organisasi."
+            />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card className="bg-slate-900 text-white border-none shadow-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-400">Total Enterprise Budget</CardTitle>
-                        <DollarSign className="h-4 w-4 text-slate-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">{formatCurrency(totalBudget)}</div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-slate-800 text-white border-none shadow-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-400">Global Utilization</CardTitle>
-                        <Activity className="h-4 w-4 text-slate-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">{utilizedPercentage}%</div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-blue-600 text-white border-none shadow-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-blue-200">Budget Consumed</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-blue-200" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">{formatCurrency(totalUsed)}</div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-emerald-600 text-white border-none shadow-md">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-emerald-200">Total Remaining</CardTitle>
-                        <Target className="h-4 w-4 text-emerald-200" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-white">{formatCurrency(totalRemaining)}</div>
-                    </CardContent>
-                </Card>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    label="Total Budget Enterprise"
+                    value={formatCurrency(totalBudget)}
+                    hint={`${MOCK_GL_ACCOUNTS.length} G/L account terdaftar`}
+                    icon={Wallet}
+                    accent="ink"
+                />
+                <StatCard
+                    label="Budget Terpakai"
+                    value={formatCurrency(totalUsed)}
+                    hint="Akumulasi seluruh G/L account"
+                    icon={TrendingUp}
+                    accent="astra"
+                />
+                <StatCard
+                    label="Sisa Budget"
+                    value={formatCurrency(totalRemaining)}
+                    hint="Kapasitas yang masih tersedia"
+                    icon={Sprout}
+                    accent="padi"
+                />
+                <StatCard
+                    label="Utilisasi Global"
+                    value={`${utilizedPercentage}%`}
+                    icon={Activity}
+                    accent={Number(utilizedPercentage) > 90 ? 'honda' : 'bulir'}
+                >
+                    <UtilizationBar percent={Number(utilizedPercentage)} />
+                </StatCard>
             </div>
 
             <Card>
                 <CardHeader>
-                    <CardTitle>G/L Accounts Detail</CardTitle>
-                    <CardDescription>Breakdown of all General Ledger accounts in the system.</CardDescription>
+                    <CardTitle>Rincian G/L Account</CardTitle>
+                    <CardDescription>Rincian seluruh General Ledger account dalam sistem.</CardDescription>
                 </CardHeader>
                 <CardContent>
                     <div className="rounded-md border border-slate-200">
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead>Account Code</TableHead>
-                                    <TableHead>Department / Name</TableHead>
+                                    <TableHead>Kode Akun</TableHead>
+                                    <TableHead>Departemen / Nama</TableHead>
                                     <TableHead className="text-right">Total Budget</TableHead>
-                                    <TableHead className="text-right">Used</TableHead>
-                                    <TableHead className="text-right">Remaining</TableHead>
-                                    <TableHead className="text-right">Health</TableHead>
+                                    <TableHead className="text-right">Terpakai</TableHead>
+                                    <TableHead className="text-right">Sisa</TableHead>
+                                    <TableHead className="text-right">Kesehatan</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -101,16 +92,16 @@ export default function OverviewPage() {
                                         <TableRow key={account.code} className="hover:bg-slate-50">
                                             <TableCell className="font-mono text-xs">{account.code}</TableCell>
                                             <TableCell className="font-medium text-slate-900">{account.name}</TableCell>
-                                            <TableCell className="text-right font-medium">{formatCurrency(account.totalBudget)}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(account.budgetUsed)}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(account.budgetRemaining)}</TableCell>
+                                            <TableCell className="text-right font-medium tabular-nums">{formatCurrency(account.totalBudget)}</TableCell>
+                                            <TableCell className="text-right tabular-nums">{formatCurrency(account.budgetUsed)}</TableCell>
+                                            <TableCell className="text-right tabular-nums">{formatCurrency(account.budgetRemaining)}</TableCell>
                                             <TableCell className="text-right">
                                                 {utilization > 90 ? (
-                                                    <Badge variant="destructive">Critical</Badge>
+                                                    <Badge variant="destructive">Kritis</Badge>
                                                 ) : utilization > 75 ? (
-                                                    <Badge variant="warning">Warning</Badge>
+                                                    <Badge variant="warning">Waspada</Badge>
                                                 ) : (
-                                                    <Badge variant="success">Healthy</Badge>
+                                                    <Badge variant="success">Sehat</Badge>
                                                 )}
                                             </TableCell>
                                         </TableRow>

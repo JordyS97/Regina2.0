@@ -12,10 +12,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             <button
                 ref={ref}
                 className={cn(
-                    "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 disabled:pointer-events-none disabled:opacity-50",
+                    // Only transform and background transition — never `all`, which
+                    // would animate layout properties nobody asked to move. The
+                    // press scale is what makes the button feel like it heard you.
+                    "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium",
+                    "transition-[transform,background-color,border-color,color] duration-150 ease-out-strong",
+                    "active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-astra-500 focus-visible:ring-offset-1",
+                    "disabled:pointer-events-none disabled:opacity-50",
                     {
-                        "bg-blue-600 text-white shadow hover:bg-blue-700": variant === "default",
-                        "bg-red-500 text-white shadow-sm hover:bg-red-600": variant === "destructive",
+                        "bg-astra-600 text-white shadow hover:bg-astra-700": variant === "default",
+                        "bg-honda-600 text-white shadow-sm hover:bg-honda-700": variant === "destructive",
                         "border border-slate-200 bg-white shadow-sm hover:bg-slate-100 text-slate-900": variant === "outline",
                         "bg-slate-100 text-slate-900 shadow-sm hover:bg-slate-200": variant === "secondary",
                         "hover:bg-slate-100 hover:text-slate-900 text-slate-700": variant === "ghost",

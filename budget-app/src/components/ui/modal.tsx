@@ -14,30 +14,61 @@ interface ModalProps {
 }
 
 export function Modal({ isOpen, onClose, title, children, className }: ModalProps) {
+    // Escape closes, and the page behind stops scrolling while the modal owns
+    // the screen. Neither is something a user will praise; both are things
+    // they notice immediately when missing.
+    React.useEffect(() => {
+        if (!isOpen) return;
+
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        document.addEventListener('keydown', onKeyDown);
+
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.removeEventListener('keydown', onKeyDown);
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isOpen, onClose]);
+
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-            {/* Backdrop */}
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
             <div
-                className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity"
+                className="padi-fade fixed inset-0 bg-astra-950/50 backdrop-blur-sm"
                 onClick={onClose}
             />
 
-            {/* Modal panel */}
-            <div className={cn(
-                "relative z-50 w-full max-w-lg rounded-xl bg-white shadow-xl isolate",
-                className
-            )}>
+            {/* A modal is not anchored to a trigger, so it scales from its own
+                centre — the one place the default transform-origin is right. */}
+            <div
+                className={cn(
+                    'padi-enter relative z-50 w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-slate-900/5 isolate',
+                    className
+                )}
+            >
                 <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-                    <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
-                    <Button variant="ghost" size="icon" onClick={onClose} className="-mr-2 text-slate-500 hover:text-slate-700">
+                    <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={onClose}
+                        aria-label="Tutup"
+                        className="-mr-2 text-slate-400 hover:text-slate-700"
+                    >
                         <X className="h-5 w-5" />
                     </Button>
                 </div>
-                <div className="px-6 py-6">
-                    {children}
-                </div>
+                <div className="px-6 py-6">{children}</div>
             </div>
         </div>
     );

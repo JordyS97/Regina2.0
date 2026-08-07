@@ -1,14 +1,217 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   PADI — Proposal Astra Motor Digital
+   Design tokens.
+
+   The palette is built on the metaphor of padi yang disemai: a seed sown,
+   tended, and harvested. Four voices:
+     putih  — the field of paper a proposal lives on
+     astra  — Astra blue, the institution that carries it
+     honda  — Honda red, reserved for refusal and risk
+     padi   — kuning-hijau, the young leaf; growth and progress
+     bulir  — keemasan, the ripened grain; approval and harvest
+   ========================================================================= */
+
 @theme {
-  --color-slate-50: #f8fafc;
-  --color-slate-100: #f1f5f9;
-  --color-slate-200: #e2e8f0;
-  --color-slate-300: #cbd5e1;
-  --color-slate-400: #94a3b8;
-  --color-slate-500: #64748b;
-  --color-slate-600: #475569;
-  --color-slate-700: #334155;
-  --color-slate-800: #1e293b;
-  --color-slate-900: #0f172a;
+  /* ── Astra blue — primary, institutional ─────────────────────────────── */
+  --color-astra-50: #eff6ff;
+  --color-astra-100: #dbeafe;
+  --color-astra-200: #bfdbfe;
+  --color-astra-300: #93c5fd;
+  --color-astra-400: #4f9cf0;
+  --color-astra-500: #1a72d4;
+  --color-astra-600: #0057b8;
+  --color-astra-700: #004694;
+  --color-astra-800: #003872;
+  --color-astra-900: #002d5c;
+  --color-astra-950: #001b38;
+
+  /* ── Honda red — rejection, over-budget, destructive ─────────────────── */
+  --color-honda-50: #fef2f2;
+  --color-honda-100: #fee2e2;
+  --color-honda-200: #fecdd0;
+  --color-honda-300: #fca5ab;
+  --color-honda-400: #f4636e;
+  --color-honda-500: #e11d33;
+  --color-honda-600: #cc0000;
+  --color-honda-700: #a80006;
+  --color-honda-800: #8a060c;
+  --color-honda-900: #710d12;
+  --color-honda-950: #3e0206;
+
+  /* ── Padi — kuning-hijau, the growing leaf ───────────────────────────── */
+  --color-padi-50: #f8fbe9;
+  --color-padi-100: #eff7c8;
+  --color-padi-200: #e0ef98;
+  --color-padi-300: #cbe25f;
+  --color-padi-400: #b5d334;
+  --color-padi-500: #99b91f;
+  --color-padi-600: #7a9714;
+  --color-padi-700: #5c7213;
+  --color-padi-800: #4a5b15;
+  --color-padi-900: #3e4d16;
+  --color-padi-950: #202b06;
+
+  /* ── Bulir — keemasan, the ripened grain ─────────────────────────────── */
+  --color-bulir-50: #fffbeb;
+  --color-bulir-100: #fef2c7;
+  --color-bulir-200: #fde48a;
+  --color-bulir-300: #fccf4d;
+  --color-bulir-400: #fbba24;
+  --color-bulir-500: #f5990b;
+  --color-bulir-600: #d97406;
+  --color-bulir-700: #b45109;
+  --color-bulir-800: #923f0e;
+  --color-bulir-900: #78340f;
+  --color-bulir-950: #451a03;
+
+  /* ── Easing ──────────────────────────────────────────────────────────
+     The built-in CSS curves are too soft to read as intentional. These are
+     the stronger variants: ease-out for anything entering or responding to
+     a press, ease-in-out for things travelling across the screen.         */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ============================================================================
+   Login scene — cinematic dawn over the paddy.
+   Everything here animates transform/opacity only, so it stays off the main
+   thread and survives a busy first paint.
+   ========================================================================= */
+
+@keyframes padi-sway {
+  from {
+    transform: rotate(calc(var(--sway) * -1));
+  }
+  to {
+    transform: rotate(var(--sway));
+  }
+}
+
+@keyframes padi-drift {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0);
+  }
+  12% {
+    opacity: var(--mote-opacity, 0.7);
+  }
+  80% {
+    opacity: var(--mote-opacity, 0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drift-x, 18px), var(--drift-y, -180px), 0);
+  }
+}
+
+@keyframes padi-bloom {
+  from {
+    opacity: 0.55;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 0.85;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes padi-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Nothing in the real world appears out of nothing, so panels never enter
+   from scale(0) — 0.96 with opacity reads as arriving, not as materialising. */
+@keyframes padi-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes padi-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.padi-enter {
+  animation: padi-enter 200ms var(--ease-out-strong) both;
+}
+
+.padi-fade {
+  animation: padi-fade 160ms ease-out both;
+}
+
+/* A stalk bends from where it meets the soil, never from its middle. */
+.padi-stalk {
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: padi-sway var(--dur, 7s) var(--ease-in-out-strong) var(--delay, 0s)
+    infinite alternate;
+}
+
+.padi-mote {
+  animation: padi-drift var(--dur, 14s) linear var(--delay, 0s) infinite;
+}
+
+.padi-bloom {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: padi-bloom 9s ease-in-out infinite alternate;
+}
+
+/* Form fields cascade in behind the illustration. Short delays only —
+   long ones read as the page being slow, not as choreography. */
+.padi-rise {
+  opacity: 0;
+  animation: padi-rise 420ms var(--ease-out-strong) var(--delay, 0s) forwards;
+}
+
+/* Reduced motion means fewer and gentler animations, not zero. The fade
+   that tells you content arrived stays; everything that moves is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .padi-stalk,
+  .padi-mote,
+  .padi-bloom {
+    animation: none;
+  }
+
+  /* Keep the fade that says "this arrived"; drop the movement. */
+  .padi-enter {
+    animation-name: padi-fade;
+  }
+
+  .padi-mote {
+    opacity: var(--mote-opacity, 0.7);
+  }
+
+  .padi-rise {
+    animation-name: padi-fade-only;
+  }
+
+  @keyframes padi-fade-only {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }

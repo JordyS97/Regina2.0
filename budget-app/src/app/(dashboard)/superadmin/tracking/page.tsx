@@ -13,15 +13,15 @@ import { formatCurrency } from '@/lib/utils';
 
 export default function TrackingPage() {
     const { user } = useAuth();
-
-    if (!user) return null;
     const [searchQuery, setSearchQuery] = React.useState('');
     const [proposals, setProposals] = React.useState(MOCK_PROPOSALS);
 
-    if (user.role !== 'SuperAdmin') {
+    // Guards sit below the hooks: returning above one changes the hook count
+    // between renders and crashes React.
+    if (!user || user.role !== 'SuperAdmin') {
         return (
             <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-slate-500">Access Restricted. Super Admins only.</div>
+                <div className="text-slate-500">Akses terbatas. Khusus Super Admin.</div>
             </div>
         );
     }

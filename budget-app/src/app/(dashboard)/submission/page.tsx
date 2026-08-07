@@ -13,10 +13,15 @@ import { Badge } from '@/components/ui/badge';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { ProposalType, ItemizedCost } from '@/lib/types';
+import { Proposal, ProposalType, ItemizedCost, BudgetSource, BUDGET_SOURCE_LABEL, Dealer } from '@/lib/types';
+import { PageHeading } from '@/components/ui/stat-card';
 import * as XLSX from 'xlsx';
 
-type BudgetSource = 'GL Account' | 'Added Fee (Biaya Titipan C6)' | 'Retail JoinProm';
+/** Sources that draw against a known balance, so the form can warn on overspend. */
+const BALANCE_BACKED: BudgetSource[] = ['GL Account', 'Added Fee'];
+
+// TODO: derive from the signed-in user once dealer is populated on their profile.
+const DEFAULT_DEALER: Dealer = 'H531-SO BIMA';
 
 export default function SubmissionPage() {
     const { user } = useAuth();
@@ -40,15 +45,6 @@ export default function SubmissionPage() {
     const [file, setFile] = useState<File | null>(null); // Main PDF/Docs
     const [excelFile, setExcelFile] = useState<File | null>(null); // For Added Fee
     const [excelError, setExcelError] = useState('');
-
-    // Access restriction
-    if (!user || (user.role !== 'User' && user.role !== 'Supervisor')) {
-        return (
-            <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-slate-500">You do not have permission to view this page.</div>
-            </div>
-        );
-    }
 
     // --- Dynamic Table Logic (For GL Account) ---
     const handleItemChange = (index: number, field: keyof ItemizedCost, value: any) => {
@@ -78,10 +74,20 @@ export default function SubmissionPage() {
     }, [items]);
 
     useEffect(() => {
-        if (budgetSource !== 'GL Account' && budgetSource !== 'Added Fee (Biaya Titipan C6)') {
+        if (!BALANCE_BACKED.includes(budgetSource)) {
             setCurrentBalance('');
         }
     }, [budgetSource]);
+
+    // Access restriction. It sits below every hook on purpose — an early
+    // return above one changes the hook count between renders and crashes React.
+    if (!user || (user.role !== 'User' && user.role !== 'Supervisor')) {
+        return (
+            <div className="flex h-[60vh] items-center justify-center">
+                <div className="text-slate-500">Anda tidak memiliki akses ke halaman ini.</div>
+            </div>
+        );
+    }
 
     // --- Excel Parsing Logic (For Added Fee) ---
     const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,14 +138,14 @@ export default function SubmissionPage() {
                 });
 
                 if (!foundJumlah) {
-                    setExcelError('Could not find a "JUMLAH" column in the uploaded file.');
+                    setExcelError('Kolom "JUMLAH" tidak ditemukan pada file yang diunggah.');
                     setCurrentBalance('');
                 } else {
                     setCurrentBalance(sum);
                 }
             } catch (err) {
                 console.error("Error parsing Excel:", err);
-                setExcelError('Failed to parse the file. Please ensure it is a valid Excel/CSV.');
+                setExcelError('Gagal membaca file. Pastikan formatnya Excel/CSV yang valid.');
                 setCurrentBalance('');
             }
         };
@@ -153,28 +159,28 @@ export default function SubmissionPage() {
         // Validation based on type
         const requiresPDF = type === 'Perbaikan AC / mobil / motor / asset lain' || type === 'Sewa Gudang';
         if (requiresPDF && !file) {
-            alert("This proposal type requires a supporting Document/PDF to be attached.");
+            alert("Tipe pengajuan ini wajib melampirkan dokumen/PDF pendukung.");
             return;
         }
 
         if (budgetSource === 'GL Account' && !glAccount) {
-            alert("Please select a G/L Account.");
+            alert("Silakan pilih G/L Account terlebih dahulu.");
             return;
         }
 
         if (amount <= 0) {
-            alert("Requested amount must be greater than 0.");
+            alert("Nilai pengajuan harus lebih besar dari 0.");
             return;
         }
 
-        if ((budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' && amount > currentBalance) {
-            alert("Error: Requested amount exceeds the available budget balance.");
+        if (BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' && amount > currentBalance) {
+            alert("Nilai pengajuan melebihi saldo budget yang tersedia.");
             return;
         }
 
         try {
             setIsSubmitting(true);
-            let attachmentUrl = null;
+            let attachmentUrl: string | null = null;
 
             // Upload main supporting file
             if (file && storage) {
@@ -187,30 +193,38 @@ export default function SubmissionPage() {
 
             if (db) {
                 const trackingId = `P${new Date().getFullYear()}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
+                const now = new Date().toISOString();
 
-                // Assemble the generic payload safely mapped to the updated type
-                const payload = {
+                // This payload has to satisfy the same Proposal shape the
+                // dashboard and approvals screens read back. An earlier version
+                // wrote `submittedBy` and a `{status, actor}` history and never
+                // wrote dateSubmitted/lastUpdated at all, so submitted proposals
+                // sorted as NaN, grouped under "Invalid Date", and never matched
+                // the `submitterId === user.id` filter on the tracking view.
+                const payload: Omit<Proposal, 'id'> & { createdAt: unknown } = {
                     trackingId,
                     title,
                     subtitle,
                     background,
-                    type,
+                    description: background,
+                    type: type as ProposalType,
                     amount,
                     budgetSource,
                     glAccountCode: budgetSource === 'GL Account' ? glAccount : '',
                     items: budgetSource === 'GL Account' ? items : [],
-                    dealer: "H531-SO BIMA", // Mocked default
+                    dealer: user.dealer ?? DEFAULT_DEALER,
                     status: 'Pending Supervisor',
-                    submittedBy: {
-                        id: user.id || 'unknown',
-                        name: user.name,
-                        department: user.department
-                    },
+                    submitterId: user.id || 'unknown',
+                    submitterName: user.name,
+                    submitterDepartment: user.department,
+                    dateSubmitted: now,
+                    lastUpdated: now,
                     history: [
                         {
-                            status: 'Pending Supervisor',
-                            date: new Date().toISOString(),
-                            actor: { id: user.id || 'unknown', name: user.name, role: user.role }
+                            date: now,
+                            action: 'Submitted',
+                            byUserId: user.id || 'unknown',
+                            byRole: user.role,
                         }
                     ],
                     attachmentUrl,
@@ -231,27 +245,27 @@ export default function SubmissionPage() {
             }, 3000);
         } catch (error) {
             console.error("Error submitting proposal:", error);
-            alert("Failed to submit proposal. Make sure Firebase is configured.");
+            alert("Gagal mengirim proposal. Pastikan koneksi dan konfigurasi Firebase sudah benar.");
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const isExceeding = (budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' && amount > currentBalance;
-    const remainingAfter = (budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' ? currentBalance - amount : null;
+    const isExceeding = BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' && amount > currentBalance;
+    const remainingAfter = BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' ? currentBalance - amount : null;
 
     return (
         <div className="max-w-5xl mx-auto space-y-6">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Form Pengajuan Proposal</h2>
-                <p className="text-slate-500 mt-1">Isi formulir pengajuan budget lengkap dengan rincian biaya.</p>
-            </div>
+            <PageHeading
+                title="Form Pengajuan Proposal"
+                description="Isi formulir pengajuan budget lengkap dengan rincian biaya."
+            />
 
             <Card className="shadow-sm border-slate-200">
                 <form onSubmit={handleSubmit}>
                     <CardHeader className="border-b border-slate-100 bg-slate-50/50 pb-6 rounded-t-xl">
                         <CardTitle className="flex items-center gap-2 text-xl">
-                            <FileText className="h-5 w-5 text-blue-600" />
+                            <FileText className="h-5 w-5 text-astra-600" />
                             Proposal Details
                         </CardTitle>
                         <CardDescription>
@@ -263,28 +277,28 @@ export default function SubmissionPage() {
                         {/* Section 1: Basic Info */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2 md:col-span-2">
-                                <label className="text-sm font-semibold text-slate-900">Judul Proposal (Title) <span className="text-red-500">*</span></label>
+                                <label className="text-sm font-semibold text-slate-900">Judul Proposal (Title) <span className="text-honda-600">*</span></label>
                                 <Input required placeholder="Contoh: Proposal Showroom Event Q3" value={title} onChange={e => setTitle(e.target.value)} />
                             </div>
 
                             <div className="space-y-2 md:col-span-2">
-                                <label className="text-sm font-semibold text-slate-900">Perihal (Subtitle) <span className="text-red-500">*</span></label>
+                                <label className="text-sm font-semibold text-slate-900">Perihal (Subtitle) <span className="text-honda-600">*</span></label>
                                 <Input required placeholder="Masukkan perihal proposal..." value={subtitle} onChange={e => setSubtitle(e.target.value)} />
                             </div>
 
                             <div className="space-y-2 md:col-span-2">
-                                <label className="text-sm font-semibold text-slate-900">Latar Belakang (Background) <span className="text-red-500">*</span></label>
+                                <label className="text-sm font-semibold text-slate-900">Latar Belakang (Background) <span className="text-honda-600">*</span></label>
                                 <textarea
                                     required
                                     value={background}
                                     onChange={e => setBackground(e.target.value)}
-                                    className="w-full flex min-h-[80px] rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 italic text-slate-700"
+                                    className="w-full flex min-h-[80px] rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-astra-500/40 focus-visible:border-astra-500 italic text-slate-700"
                                     placeholder="(MENJELASKAN MAKSUD DAN TUJUAN DARI PENGAJUAN PROPOSAL)"
                                 />
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-slate-900">Tipe Proposal <span className="text-red-500">*</span></label>
+                                <label className="text-sm font-semibold text-slate-900">Tipe Proposal <span className="text-honda-600">*</span></label>
                                 <Select
                                     required
                                     value={type}
@@ -305,15 +319,15 @@ export default function SubmissionPage() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-sm font-semibold text-slate-900">Sumber Budget <span className="text-red-500">*</span></label>
+                                <label className="text-sm font-semibold text-slate-900">Sumber Budget <span className="text-honda-600">*</span></label>
                                 <Select
                                     required
                                     value={budgetSource}
                                     onChange={e => setBudgetSource(e.target.value as BudgetSource)}
                                     options={[
-                                        { label: 'GL Account', value: 'GL Account' },
-                                        { label: 'Added Fee (Biaya Titipan C6)', value: 'Added Fee (Biaya Titipan C6)' },
-                                        { label: 'Retail JoinProm', value: 'Retail JoinProm' },
+                                        { label: BUDGET_SOURCE_LABEL['GL Account'], value: 'GL Account' },
+                                        { label: BUDGET_SOURCE_LABEL['Added Fee'], value: 'Added Fee' },
+                                        { label: BUDGET_SOURCE_LABEL['Retail JoinProm'], value: 'Retail JoinProm' },
                                     ]}
                                 />
                             </div>
@@ -324,10 +338,10 @@ export default function SubmissionPage() {
 
                             {/* --- SCENARIO A: GL ACCOUNT --- */}
                             {budgetSource === 'GL Account' && (
-                                <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200">
+                                <div className="padi-enter space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="space-y-2">
-                                            <label className="text-sm font-medium text-slate-900">Pilih G/L Account Code <span className="text-red-500">*</span></label>
+                                            <label className="text-sm font-medium text-slate-900">Pilih G/L Account Code <span className="text-honda-600">*</span></label>
                                             <Select
                                                 required
                                                 value={glAccount}
@@ -343,7 +357,7 @@ export default function SubmissionPage() {
                                             />
                                         </div>
                                         <div className="space-y-2">
-                                            <label className="text-sm font-medium text-slate-900">Saldo Budget Saat Ini (Rp) <span className="text-red-500">*</span></label>
+                                            <label className="text-sm font-medium text-slate-900">Saldo Budget Saat Ini (Rp) <span className="text-honda-600">*</span></label>
                                             <Input
                                                 required
                                                 type="number"
@@ -359,10 +373,10 @@ export default function SubmissionPage() {
                             )}
 
                             {/* --- SCENARIO B: ADDED FEE --- */}
-                            {budgetSource === 'Added Fee (Biaya Titipan C6)' && (
-                                <div className="space-y-6 animate-in fade-in zoom-in-95 duration-200 bg-white p-6 rounded-xl border-2 border-dashed border-blue-200">
+                            {budgetSource === 'Added Fee' && (
+                                <div className="padi-enter space-y-6 rounded-xl border-2 border-dashed border-astra-200 bg-white p-6">
                                     <div className="flex items-start gap-4">
-                                        <div className="p-3 bg-blue-50 text-blue-600 rounded-lg shrink-0">
+                                        <div className="shrink-0 rounded-lg bg-astra-50 p-3 text-astra-600">
                                             <UploadCloud className="w-6 h-6" />
                                         </div>
                                         <div className="space-y-4 flex-1">
@@ -377,15 +391,15 @@ export default function SubmissionPage() {
                                                 accept=".xlsx, .xls, .csv"
                                                 required
                                                 onChange={handleExcelUpload}
-                                                className="file:bg-blue-600 file:text-white file:border-0 file:rounded file:px-4 file:py-1 file:mr-4 file:font-semibold hover:file:bg-blue-700 cursor-pointer text-slate-600"
+                                                className="cursor-pointer text-slate-600 file:mr-4 file:rounded file:border-0 file:bg-astra-600 file:px-4 file:py-1 file:font-semibold file:text-white hover:file:bg-astra-700"
                                             />
                                             {excelError && (
-                                                <p className="text-sm font-medium text-red-500 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" /> {excelError}</p>
+                                                <p className="flex items-center gap-1.5 text-sm font-medium text-honda-600"><AlertTriangle className="w-4 h-4" /> {excelError}</p>
                                             )}
                                         </div>
                                     </div>
                                     {typeof currentBalance === 'number' && (
-                                        <div className="flex items-center justify-between p-4 bg-slate-50 border border-blue-200 rounded-lg">
+                                        <div className="flex items-center justify-between rounded-lg border border-astra-200 bg-astra-50/60 p-4">
                                             <span className="text-sm font-semibold text-slate-700 text-right w-full pr-4">Total Budget Available dari Excel:</span>
                                             <span className="font-mono text-xl font-bold text-slate-900 shrink-0">{formatCurrency(currentBalance)}</span>
                                         </div>
@@ -395,11 +409,11 @@ export default function SubmissionPage() {
 
                             {/* --- SCENARIO C: RETAIL JOINPROM --- */}
                             {budgetSource === 'Retail JoinProm' && (
-                                <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200 bg-blue-50 p-5 rounded-xl border border-blue-200 flex items-center gap-3">
-                                    <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
+                                <div className="padi-enter flex items-center gap-3 rounded-xl border border-astra-200 bg-astra-50 p-5">
+                                    <CheckCircle2 className="h-5 w-5 shrink-0 text-astra-600" />
                                     <div>
-                                        <h3 className="text-sm font-bold text-blue-900">Retail JoinProm Terpilih</h3>
-                                        <p className="text-xs text-blue-700 mt-0.5">Silakan tambahkan item kebutuhan pada tabel Rincian Biaya Pengajuan di bawah ini.</p>
+                                        <h3 className="text-sm font-bold text-astra-900">Retail JoinProm Terpilih</h3>
+                                        <p className="mt-0.5 text-xs text-astra-700">Silakan tambahkan item kebutuhan pada tabel Rincian Biaya Pengajuan di bawah ini.</p>
                                     </div>
                                 </div>
                             )}
@@ -433,7 +447,7 @@ export default function SubmissionPage() {
                                                             <input
                                                                 type="text"
                                                                 required
-                                                                className="w-full h-10 px-3 outline-none bg-transparent focus:bg-blue-50/50"
+                                                                className="w-full h-10 px-3 outline-none bg-transparent focus:bg-astra-50/60"
                                                                 value={item.item}
                                                                 placeholder="Nama barang / jasa"
                                                                 onChange={(e) => handleItemChange(idx, 'item', e.target.value)}
@@ -444,7 +458,7 @@ export default function SubmissionPage() {
                                                                 type="number"
                                                                 min="1"
                                                                 required
-                                                                className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-blue-50/50"
+                                                                className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-astra-50/60"
                                                                 value={item.qty || ''}
                                                                 onChange={(e) => handleItemChange(idx, 'qty', parseInt(e.target.value) || 0)}
                                                             />
@@ -455,7 +469,7 @@ export default function SubmissionPage() {
                                                                 type="number"
                                                                 min="0"
                                                                 required
-                                                                className="w-full h-10 pl-8 pr-3 text-right outline-none bg-transparent focus:bg-blue-50/50"
+                                                                className="w-full h-10 pl-8 pr-3 text-right outline-none bg-transparent focus:bg-astra-50/60"
                                                                 value={item.price || ''}
                                                                 onChange={(e) => handleItemChange(idx, 'price', parseInt(e.target.value) || 0)}
                                                             />
@@ -466,15 +480,15 @@ export default function SubmissionPage() {
                                                         <td className="p-0 border-r border-slate-200">
                                                             <input
                                                                 type="text"
-                                                                className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-blue-50/50"
+                                                                className="w-full h-10 px-3 text-center outline-none bg-transparent focus:bg-astra-50/60"
                                                                 value={item.m1}
                                                                 onChange={(e) => handleItemChange(idx, 'm1', e.target.value)}
                                                             />
                                                         </td>
                                                         <td className="px-2 py-2 text-center">
                                                             {items.length > 1 && (
-                                                                <button type="button" onClick={() => removeItem(idx)} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded-md hover:bg-red-50">
-                                                                    <Trash2 className="w-4 h-4" />
+                                                                <button type="button" onClick={() => removeItem(idx)} className="rounded-md p-1 text-slate-400 transition-colors duration-150 hover:bg-honda-50 hover:text-honda-600">
+                                                                    <Trash2 className="h-4 w-4" />
                                                                 </button>
                                                             )}
                                                         </td>
@@ -483,14 +497,14 @@ export default function SubmissionPage() {
                                                 {/* Table Footer Totals */}
                                                 <tr className="bg-slate-100 font-bold text-slate-900 border-t-2 border-slate-300">
                                                     <td colSpan={4} className="px-4 py-3 text-right uppercase tracking-wider">TOTAL PERMINTAAN DANA</td>
-                                                    <td className="px-4 py-3 text-right border-x border-slate-300 text-blue-700">{formatCurrency(amount).replace('Rp', '')}</td>
+                                                    <td className="px-4 py-3 text-right border-x border-slate-300 text-astra-700">{formatCurrency(amount).replace('Rp', '')}</td>
                                                     <td colSpan={2}></td>
                                                 </tr>
                                             </tbody>
                                         </table>
                                     </div>
                                     <div className="bg-white p-2 border-t border-slate-200 flex justify-center">
-                                        <Button type="button" variant="ghost" size="sm" onClick={addItem} className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 w-full rounded-md border border-dashed border-blue-200">
+                                        <Button type="button" variant="ghost" size="sm" onClick={addItem} className="w-full rounded-md border border-dashed border-astra-200 text-astra-600 hover:bg-astra-50 hover:text-astra-700">
                                             <Plus className="w-4 h-4 mr-2" /> Tambah Baris
                                         </Button>
                                     </div>
@@ -498,16 +512,16 @@ export default function SubmissionPage() {
 
                                 {/* Preview Check for Budget Balances */}
                                 {remainingAfter !== null && (
-                                    <div className={`p-4 rounded-xl border flex items-center justify-between animate-in fade-in duration-300 ${isExceeding ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                                    <div className={`padi-enter flex items-center justify-between rounded-xl border p-4 ${isExceeding ? 'border-honda-200 bg-honda-50' : 'border-padi-200 bg-padi-50'}`}>
                                         <div className="flex items-center gap-3">
                                             <span className="font-semibold text-slate-700">Estimasi Sisa Saldo:</span>
-                                            <span className={`font-mono text-lg font-bold ${isExceeding ? 'text-red-600' : 'text-emerald-700'}`}>{formatCurrency(remainingAfter)}</span>
+                                            <span className={`font-mono text-lg font-bold tabular-nums ${isExceeding ? 'text-honda-700' : 'text-padi-800'}`}>{formatCurrency(remainingAfter)}</span>
                                         </div>
                                         <div>
                                             {isExceeding ? (
-                                                <Badge variant="destructive" className="flex items-center gap-1.5 px-3 py-1 bg-red-100 text-red-800 border-red-200"><AlertTriangle className="w-4 h-4" /> Dana Tidak Mencukupi</Badge>
+                                                <Badge variant="destructive" className="flex items-center gap-1.5 px-3 py-1"><AlertTriangle className="w-4 h-4" /> Dana Tidak Mencukupi</Badge>
                                             ) : (
-                                                <Badge variant="success" className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 border-emerald-200"><CheckCircle2 className="w-4 h-4" /> Saldo Aman</Badge>
+                                                <Badge variant="success" className="flex items-center gap-1.5 px-3 py-1"><CheckCircle2 className="w-4 h-4" /> Saldo Aman</Badge>
                                             )}
                                         </div>
                                     </div>
@@ -520,7 +534,7 @@ export default function SubmissionPage() {
                             <label className="text-sm font-semibold text-slate-900">Dokumen Pendukung Lainnya</label>
 
                             {(type === 'Perbaikan AC / mobil / motor / asset lain' || type === 'Sewa Gudang') && (
-                                <div className="bg-amber-50 border border-amber-200 p-3 rounded-md text-amber-800 text-sm flex gap-2 items-center">
+                                <div className="flex items-center gap-2 rounded-md border border-bulir-200 bg-bulir-50 p-3 text-sm text-bulir-800">
                                     <AlertTriangle className="w-4 h-4 shrink-0" />
                                     <span><strong>Wajib Diisi:</strong> Tipe pengajuan ini memerlukan lampiran PDF / Dokumen perbandingan.</span>
                                 </div>
@@ -548,7 +562,7 @@ export default function SubmissionPage() {
                             <Button
                                 type="submit"
                                 disabled={isSubmitting || isSubmitted || isExceeding || amount <= 0}
-                                className="bg-blue-600 hover:bg-blue-700 text-white min-w-[140px]"
+                                className="min-w-[140px]"
                             >
                                 {isSubmitting ? 'Mengirim...' : isSubmitted ? (
                                     <>

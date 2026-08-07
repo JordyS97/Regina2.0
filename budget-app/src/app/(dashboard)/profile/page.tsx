@@ -6,17 +6,17 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/auth-context';
 import { Save, UserCircle } from 'lucide-react';
+import { PageHeading } from '@/components/ui/stat-card';
 
 export default function ProfilePage() {
     const { user } = useAuth();
-
-    if (!user) return null;
     const [isSaved, setIsSaved] = useState(false);
 
-    // Initialize with mock user data
+    // Seeded from the signed-in user. Read defensively — this initialiser runs
+    // before the guard below, because hooks cannot sit behind an early return.
     const [formData, setFormData] = useState({
-        name: user.name,
-        email: user.email,
+        name: user?.name ?? '',
+        email: user?.email ?? '',
         password: '',
         confirmPassword: ''
     });
@@ -34,6 +34,8 @@ export default function ProfilePage() {
         setTimeout(() => setIsSaved(false), 2000);
     };
 
+    if (!user) return null;
+
     if (user.role === 'SuperAdmin') {
         return (
             <div className="flex h-[60vh] items-center justify-center">
@@ -44,10 +46,10 @@ export default function ProfilePage() {
 
     return (
         <div className="max-w-2xl mx-auto space-y-6">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">My Profile</h2>
-                <p className="text-slate-500 mt-1">Manage your account settings and preferences.</p>
-            </div>
+            <PageHeading
+                title="Profil Saya"
+                description="Kelola pengaturan akun dan preferensi Anda."
+            />
 
             <Card>
                 <form onSubmit={handleSave}>
