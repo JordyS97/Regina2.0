@@ -10,9 +10,18 @@ import { MOCK_GL_ACCOUNTS, MOCK_DEALERS } from '@/lib/mock-data';
 import { Proposal } from '@/lib/types';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell } from 'recharts';
 import { DownloadCloud, TrendingUp, DollarSign, PieChart, Activity, FilterX } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, downloadCsv } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
+import {
+    approvedAmount,
+    committedAmount,
+    displayTrackingId,
+    formatDate,
+    normalizeProposal,
+    toDate,
+    visibleProposals,
+} from '@/lib/proposals';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
 
@@ -26,8 +35,6 @@ export default function DashboardPage() {
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
 
-    const [isDownloading, setIsDownloading] = useState(false);
-
     useEffect(() => {
         if (!db) {
             setLoading(false);
@@ -35,11 +42,7 @@ export default function DashboardPage() {
         }
 
         const unsubscribe = onSnapshot(collection(db, 'proposals'), (snapshot) => {
-            const fetchedProposals: Proposal[] = [];
-            snapshot.forEach((doc) => {
-                fetchedProposals.push({ id: doc.id, ...doc.data() } as Proposal);
-            });
-            setProposals(fetchedProposals);
+            setProposals(snapshot.docs.map(d => normalizeProposal(d.id, d.data())));
             setLoading(false);
         }, (error) => {
             console.error("Error fetching proposals:", error);
@@ -48,6 +51,18 @@ export default function DashboardPage() {
 
         return () => unsubscribe();
     }, []);
+
+    // Derived Data — scoped to what this role is allowed to see, then filtered.
+    const filteredProposals = useMemo(() => {
+        if (!user) return [];
+        return visibleProposals(proposals, user).filter(p => {
+            const submitted = toDate(p.dateSubmitted);
+            if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
+            if (dateFrom && (!submitted || submitted < new Date(dateFrom))) return false;
+            if (dateTo && (!submitted || submitted > new Date(`${dateTo}T23:59:59`))) return false;
+            return true;
+        });
+    }, [proposals, user, selectedDealer, dateFrom, dateTo]);
 
     if (!user) return null;
 
@@ -61,9 +76,22 @@ export default function DashboardPage() {
     }
 
     const handleDownload = () => {
-        setIsDownloading(true);
-        alert("Downloading Budget Summary...");
-        setTimeout(() => setIsDownloading(false), 2000);
+        downloadCsv(
+            `regina-budget-summary-${new Date().toISOString().slice(0, 10)}.csv`,
+            ['No. Proposal', 'Judul', 'Tipe', 'Dealer', 'Pengaju', 'Sumber Budget', 'G/L Account', 'Nilai (Rp)', 'Status', 'Tanggal Pengajuan'],
+            filteredProposals.map(p => [
+                displayTrackingId(p),
+                p.title,
+                p.type ?? '',
+                p.dealer ?? '',
+                p.submitterName ?? p.submitterId,
+                p.budgetSource ?? '',
+                p.glAccountCode ?? '',
+                p.amount,
+                p.status,
+                formatDate(p.dateSubmitted),
+            ])
+        );
     };
 
     const clearFilters = () => {
@@ -72,27 +100,20 @@ export default function DashboardPage() {
         setDateTo('');
     };
 
-    // Derived Data
-    const filteredProposals = useMemo(() => {
-        return proposals.filter(p => {
-            if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
-            if (dateFrom && new Date(p.dateSubmitted) < new Date(dateFrom)) return false;
-            if (dateTo && new Date(p.dateSubmitted) > new Date(`${dateTo}T23:59:59`)) return false;
-            return true;
-        });
-    }, [proposals, selectedDealer, dateFrom, dateTo]);
-
     // KPI Calculations
     const enterpriseTotalBudget = MOCK_GL_ACCOUNTS.reduce((sum, acc) => sum + acc.totalBudget, 0);
     const totalBudget = selectedDealer === 'All' ? enterpriseTotalBudget : enterpriseTotalBudget / MOCK_DEALERS.length;
 
-    const totalUsed = filteredProposals.reduce((sum, p) => sum + p.amount, 0);
+    // Rejected proposals are excluded — they never draw on the budget.
+    const totalUsed = committedAmount(filteredProposals);
+    const totalApproved = approvedAmount(filteredProposals);
     const totalRemaining = Math.max(0, totalBudget - totalUsed);
     const utilizedPercentage = totalBudget > 0 ? ((totalUsed / totalBudget) * 100).toFixed(1) : '0.0';
 
     // 1. Monthly Trends (Line Chart)
     const monthlyDataMap = filteredProposals.reduce((acc, p) => {
-        const date = new Date(p.dateSubmitted);
+        const date = toDate(p.dateSubmitted);
+        if (!date) return acc;
         const monthYear = date.toLocaleString('default', { month: 'short', year: 'numeric' });
         acc[monthYear] = (acc[monthYear] || 0) + p.amount;
         return acc;
@@ -106,7 +127,9 @@ export default function DashboardPage() {
 
     // 2. Yearly (Column Chart)
     const yearlyDataMap = filteredProposals.reduce((acc, p) => {
-        const year = new Date(p.dateSubmitted).getFullYear().toString();
+        const date = toDate(p.dateSubmitted);
+        if (!date) return acc;
+        const year = date.getFullYear().toString();
         acc[year] = (acc[year] || 0) + p.amount;
         return acc;
     }, {} as Record<string, number>);
@@ -163,11 +186,15 @@ export default function DashboardPage() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight text-slate-900">Dashboard</h2>
-                    <p className="text-slate-500 mt-1">Welcome back, {user.name}. Here is your budget overview.</p>
+                    <p className="text-slate-500 mt-1">
+                        {loading
+                            ? 'Memuat data proposal...'
+                            : `Welcome back, ${user.name}. Here is your budget overview.`}
+                    </p>
                 </div>
-                <Button onClick={handleDownload} disabled={isDownloading} className="self-start sm:self-auto">
+                <Button onClick={handleDownload} disabled={filteredProposals.length === 0} className="self-start sm:self-auto">
                     <DownloadCloud className="mr-2 h-4 w-4" />
-                    {isDownloading ? 'Downloading...' : 'Download Summary (PDF)'}
+                    Download Summary (CSV)
                 </Button>
             </div>
 
@@ -226,7 +253,7 @@ export default function DashboardPage() {
                     <CardContent>
                         <div className="text-2xl font-bold text-slate-900">{formatCurrency(totalUsed)}</div>
                         <p className="text-xs text-slate-500 mt-1 flex items-center">
-                            All proposals in current view
+                            Approved &amp; in-flight ({formatCurrency(totalApproved)} approved)
                         </p>
                     </CardContent>
                 </Card>

@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useAuth } from '@/context/auth-context';
-import { MOCK_GL_ACCOUNTS, MOCK_PROPOSALS, MOCK_DEALERS } from '@/lib/mock-data';
+import { MOCK_GL_ACCOUNTS, MOCK_DEALERS } from '@/lib/mock-data';
+import { Proposal } from '@/lib/types';
 import {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
     ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell
@@ -15,18 +16,58 @@ import {
     DownloadCloud, TrendingUp, DollarSign, Activity, FilterX,
     Globe, Users, FileCheck, AlertTriangle
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, downloadCsv } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
+import {
+    approvedAmount,
+    committedAmount,
+    displayTrackingId,
+    formatDate,
+    isPending,
+    normalizeProposal,
+    toDate,
+} from '@/lib/proposals';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'];
 
 export default function SuperAdminDashboardPage() {
     const { user } = useAuth();
-    const [isDownloading, setIsDownloading] = useState(false);
+    const [proposals, setProposals] = useState<Proposal[]>([]);
+    const [loading, setLoading] = useState(true);
 
     // Filters State
     const [selectedDealer, setSelectedDealer] = useState<string>('All');
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
+
+    useEffect(() => {
+        if (!db) {
+            setLoading(false);
+            return;
+        }
+
+        const unsubscribe = onSnapshot(collection(db, 'proposals'), (snapshot) => {
+            setProposals(snapshot.docs.map(d => normalizeProposal(d.id, d.data())));
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching proposals:", error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    // Derived Data
+    const filteredProposals = useMemo(() => {
+        return proposals.filter(p => {
+            const submitted = toDate(p.dateSubmitted);
+            if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
+            if (dateFrom && (!submitted || submitted < new Date(dateFrom))) return false;
+            if (dateTo && (!submitted || submitted > new Date(`${dateTo}T23:59:59`))) return false;
+            return true;
+        });
+    }, [proposals, selectedDealer, dateFrom, dateTo]);
 
     if (!user || user.role !== 'SuperAdmin') {
         return (
@@ -37,9 +78,22 @@ export default function SuperAdminDashboardPage() {
     }
 
     const handleDownload = () => {
-        setIsDownloading(true);
-        alert("Downloading Enterprise Budget Summary...");
-        setTimeout(() => setIsDownloading(false), 2000);
+        downloadCsv(
+            `regina-enterprise-${new Date().toISOString().slice(0, 10)}.csv`,
+            ['No. Proposal', 'Judul', 'Tipe', 'Dealer', 'Pengaju', 'Sumber Budget', 'G/L Account', 'Nilai (Rp)', 'Status', 'Tanggal Pengajuan'],
+            filteredProposals.map(p => [
+                displayTrackingId(p),
+                p.title,
+                p.type ?? '',
+                p.dealer ?? '',
+                p.submitterName ?? p.submitterId,
+                p.budgetSource ?? '',
+                p.glAccountCode ?? '',
+                p.amount,
+                p.status,
+                formatDate(p.dateSubmitted),
+            ])
+        );
     };
 
     const clearFilters = () => {
@@ -48,31 +102,25 @@ export default function SuperAdminDashboardPage() {
         setDateTo('');
     };
 
-    // Derived Data
-    const filteredProposals = useMemo(() => {
-        return MOCK_PROPOSALS.filter(p => {
-            if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
-            if (dateFrom && new Date(p.dateSubmitted) < new Date(dateFrom)) return false;
-            if (dateTo && new Date(p.dateSubmitted) > new Date(`${dateTo}T23:59:59`)) return false;
-            return true;
-        });
-    }, [selectedDealer, dateFrom, dateTo]);
-
     // Enterprise KPI Calculations
     const enterpriseTotalBudget = MOCK_GL_ACCOUNTS.reduce((sum, acc) => sum + acc.totalBudget, 0);
     const totalBudget = selectedDealer === 'All' ? enterpriseTotalBudget : enterpriseTotalBudget / MOCK_DEALERS.length;
-    const totalUsed = filteredProposals.reduce((sum, p) => sum + p.amount, 0);
+    // Rejected proposals never consume budget; approved and in-flight ones do.
+    const totalUsed = committedAmount(filteredProposals);
+    const totalApproved = approvedAmount(filteredProposals);
     const totalRemaining = Math.max(0, totalBudget - totalUsed);
     const utilizedPercentage = totalBudget > 0 ? ((totalUsed / totalBudget) * 100).toFixed(1) : '0.0';
 
     const totalProposals = filteredProposals.length;
     const approvedCount = filteredProposals.filter(p => p.status === 'Approved').length;
-    const pendingCount = filteredProposals.filter(p => p.status.startsWith('Pending')).length;
+    const pendingCount = filteredProposals.filter(p => isPending(p.status)).length;
     const rejectedCount = filteredProposals.filter(p => p.status === 'Rejected').length;
 
-    // 1. Monthly Trends (Line Chart)
+    // 1. Monthly Trends (Line Chart) — undated docs are skipped rather than
+    // collapsing into an "Invalid Date" bucket.
     const monthlyDataMap = filteredProposals.reduce((acc, p) => {
-        const date = new Date(p.dateSubmitted);
+        const date = toDate(p.dateSubmitted);
+        if (!date) return acc;
         const monthYear = date.toLocaleString('default', { month: 'short', year: 'numeric' });
         acc[monthYear] = (acc[monthYear] || 0) + p.amount;
         return acc;
@@ -86,7 +134,9 @@ export default function SuperAdminDashboardPage() {
 
     // 2. Yearly (Column Chart)
     const yearlyDataMap = filteredProposals.reduce((acc, p) => {
-        const year = new Date(p.dateSubmitted).getFullYear().toString();
+        const date = toDate(p.dateSubmitted);
+        if (!date) return acc;
+        const year = date.getFullYear().toString();
         acc[year] = (acc[year] || 0) + p.amount;
         return acc;
     }, {} as Record<string, number>);
@@ -166,11 +216,19 @@ export default function SuperAdminDashboardPage() {
                         <Globe className="h-8 w-8 text-blue-600" />
                         Enterprise Dashboard
                     </h2>
-                    <p className="text-slate-500 mt-1">Bird's-eye view of all budget activity across the organization.</p>
+                    <p className="text-slate-500 mt-1">
+                        {loading
+                            ? 'Memuat data proposal...'
+                            : `Bird's-eye view of all budget activity across the organization (${proposals.length} proposal).`}
+                    </p>
                 </div>
-                <Button onClick={handleDownload} disabled={isDownloading} className="self-start sm:self-auto bg-slate-900 hover:bg-slate-800">
+                <Button
+                    onClick={handleDownload}
+                    disabled={filteredProposals.length === 0}
+                    className="self-start sm:self-auto bg-slate-900 hover:bg-slate-800"
+                >
                     <DownloadCloud className="mr-2 h-4 w-4" />
-                    {isDownloading ? 'Downloading...' : 'Export Report (PDF)'}
+                    Export Report (CSV)
                 </Button>
             </div>
 
@@ -228,7 +286,9 @@ export default function SuperAdminDashboardPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-bold">{formatCurrency(totalUsed)}</div>
-                        <p className="text-xs text-blue-200 mt-1">{utilizedPercentage}% utilization</p>
+                        <p className="text-xs text-blue-200 mt-1">
+                            {formatCurrency(totalApproved)} approved • {utilizedPercentage}% utilization
+                        </p>
                     </CardContent>
                 </Card>
 

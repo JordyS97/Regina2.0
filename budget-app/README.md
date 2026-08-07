@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# REGINA 2.0 — Budget Proposal & Approval
 
-## Getting Started
+Aplikasi pengajuan dan persetujuan budget untuk jaringan dealer (Astra Motor NTB).
+Dibangun dengan Next.js (App Router), Firebase Auth, Firestore, dan Firebase Storage.
 
-First, run the development server:
+## Alur kerja (goal aplikasi)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+User / Supervisor  ──►  Supervisor  ──►  Sub Dept Head  ──►  Finance Head  ──►  Region Head  ──►  Approved
+   (Submission)                                                                      ▲
+                                                                     dapat di-bypass oleh Super Admin
+                                                                     (toggle "Region Approval" di Tracking)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- **Submission** — hanya role `User` dan `Supervisor`. Proposal berisi judul, perihal,
+  latar belakang, tipe, sumber budget (GL Account / Added Fee (Biaya Titipan C6) /
+  Retail JoinProm), tabel rincian biaya, dealer, dan lampiran.
+- Proposal dari seorang **Supervisor langsung masuk ke Sub Dept Head** — tidak ada yang
+  menyetujui pengajuannya sendiri.
+- **Approvals** — tiap approver hanya melihat proposal yang sedang berada di mejanya,
+  ditambah pengajuannya sendiri dan proposal yang pernah ia proses.
+- **Rejection** menghentikan alur dan wajib disertai alasan.
+- **Dashboard** — KPI dan grafik dari data Firestore secara real-time. Proposal `Rejected`
+  tidak dihitung sebagai pemakaian budget.
+- **Super Admin** — Enterprise Dashboard, System Overview (konsumsi per G/L account),
+  Proposal Tracking (bottleneck + bypass Region Head), dan User Management.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Logika alur ini terpusat di `src/lib/proposals.ts` dan ditegakkan ulang di
+`firestore.rules`, sehingga UI dan database tidak bisa berbeda aturan.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Konfigurasi
 
-## Learn More
+Buat `.env.local` di folder `budget-app`:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# Firebase Web SDK (client) — dari Firebase Console → Project settings → Your apps
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Firebase Admin SDK (server) — service account JSON, boleh raw JSON atau base64.
+# Dibutuhkan oleh menu User Management (buat user & reset password).
+FIREBASE_SERVICE_ACCOUNT_KEY=
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Opsional, hanya untuk instalasi awal: email ini otomatis menjadi SuperAdmin
+# pada login pertama, supaya direktori user bisa diisi. Kosongkan di produksi.
+NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL=
+```
 
-## Deploy on Vercel
+Tanpa variabel `NEXT_PUBLIC_FIREBASE_*`, aplikasi tetap jalan tetapi tidak terhubung
+ke backend — semua halaman akan mengarahkan ke `/login`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Menjalankan
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm install
+npm run dev      # http://localhost:3000
+npm run build    # build produksi
+npm run lint
+```
+
+## Deploy security rules
+
+Rules di repo ini adalah bagian dari kontrol akses aplikasi, bukan sekadar contoh.
+Deploy setiap kali berubah:
+
+```bash
+firebase deploy --only firestore:rules,storage:rules
+```
+
+Ringkasan aturan:
+
+- `users` — dapat dibaca semua user login; role dan dealer **hanya** dapat diubah
+  Super Admin; user biasa hanya boleh mengubah namanya sendiri.
+- `proposals` — dibuat atas nama pengaju sendiri dan selalu masuk dari tahap awal;
+  hanya approver pada tahap berjalan yang boleh memindahkan status, dan tidak boleh
+  atas proposalnya sendiri; nominal, dealer, dan G/L account terkunci setelah dikirim.
+- `storage` — upload dibatasi ke folder `proposals/`, maksimal 10 MB, dan hanya
+  tipe dokumen/gambar.
+
+## Akun
+
+Akun dibuat oleh Super Admin melalui **User Management** (password default
+`NTBRegina2.0`, dapat di-reset dari halaman yang sama). Halaman login tidak lagi
+mendaftarkan akun baru secara otomatis.
+
+## Catatan data
+
+`src/lib/mock-data.ts` masih menyediakan daftar **G/L Account** dan **dealer** sebagai
+master data statis. Saldo `budgetUsed` di sana bersifat saldo awal; pemakaian aktual
+dihitung ulang dari proposal yang berjalan/di-approve pada halaman System Overview.
+Pindahkan master data ini ke Firestore bila sudah tersedia sumber resminya.

@@ -1,9 +1,104 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function role() {
+      return signedIn() ? profile().role : '';
+    }
+
+    function isSuperAdmin() {
+      return signedIn() && role() == 'SuperAdmin';
+    }
+
+    // The desk each approver role is responsible for.
+    function stageForRole(r) {
+      return r == 'Supervisor' ? 'Pending Supervisor'
+           : r == 'SubDeptHead' ? 'Pending Sub Dept'
+           : r == 'FinanceHead' ? 'Pending Finance'
+           : r == 'RegionHead' ? 'Pending Region'
+           : '';
+    }
+
+    // Where a proposal may legally go next — mirrors nextStatus() in
+    // src/lib/proposals.ts so the client cannot skip a stage.
+    function nextStage(current, skipRegion) {
+      return current == 'Pending Supervisor' ? 'Pending Sub Dept'
+           : current == 'Pending Sub Dept' ? 'Pending Finance'
+           : current == 'Pending Finance' ? (skipRegion ? 'Approved' : 'Pending Region')
+           : current == 'Pending Region' ? 'Approved'
+           : '';
+    }
+
+    // A Supervisor's own request skips their desk; everyone else starts at it.
+    function entryStage(r) {
+      return r == 'Supervisor' ? 'Pending Sub Dept' : 'Pending Supervisor';
+    }
+
+    match /users/{userId} {
+      // Anyone signed in can read the directory (approver names, dealers).
+      allow read: if signedIn();
+
+      // First sign-in creates the caller's own profile, and only as a plain User.
+      allow create: if signedIn()
+                    && request.auth.uid == userId
+                    && request.resource.data.role == 'User';
+
+      // Users may edit their own display name but never their own role or dealer.
+      allow update: if isSuperAdmin()
+                    || (signedIn()
+                        && request.auth.uid == userId
+                        && request.resource.data.role == resource.data.role
+                        && request.resource.data.get('dealer', '') == resource.data.get('dealer', ''));
+
+      allow delete: if isSuperAdmin();
+    }
+
+    match /proposals/{proposalId} {
+      allow read: if signedIn();
+
+      // A proposal is always raised in the submitter's own name, and always
+      // enters the flow at its role's first stage — it can never be born approved.
+      allow create: if signedIn()
+                    && request.resource.data.submitterId == request.auth.uid
+                    && (role() == 'User' || role() == 'Supervisor')
+                    && request.resource.data.amount is number
+                    && request.resource.data.amount > 0
+                    && request.resource.data.status == entryStage(role())
+                    && request.resource.data.skipRegionHeadApproval == false;
+
+      // Only the approver whose desk the proposal is sitting on may move it,
+      // never on their own submission, and only one stage at a time. The
+      // financial terms and the Region Head bypass stay frozen — Super Admins
+      // are the sole override.
+      allow update: if isSuperAdmin()
+                    || (signedIn()
+                        && resource.data.submitterId != request.auth.uid
+                        && resource.data.status == stageForRole(role())
+                        && request.resource.data.status in [
+                             'Rejected',
+                             nextStage(resource.data.status, resource.data.get('skipRegionHeadApproval', false))
+                           ]
+                        && request.resource.data.submitterId == resource.data.submitterId
+                        && request.resource.data.amount == resource.data.amount
+                        && request.resource.data.dealer == resource.data.dealer
+                        && request.resource.data.glAccountCode == resource.data.glAccountCode
+                        && request.resource.data.get('skipRegionHeadApproval', false)
+                           == resource.data.get('skipRegionHeadApproval', false));
+
+      allow delete: if isSuperAdmin();
+    }
+
+    // Anything not matched above stays closed.
     match /{document=**} {
-      // Allow read and write access for all authenticated users
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

@@ -1,15 +1,27 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/context/auth-context';
-import { Proposal, ProposalStatus } from '@/lib/types';
+import { Proposal } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { DownloadCloud, Check, X, Clock } from 'lucide-react';
-import { cn, formatCurrency } from '@/lib/utils';
+import { DownloadCloud, Check, X, Clock, Paperclip } from 'lucide-react';
+import { cn, formatCurrency, downloadCsv } from '@/lib/utils';
+import {
+    actionQueue,
+    buildHistoryEntry,
+    canActOn,
+    displayTrackingId,
+    formatDate,
+    historyQueue,
+    nextStatus,
+    normalizeProposal,
+    sortByRecent,
+    visibleProposals,
+} from '@/lib/proposals';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, doc, updateDoc, arrayUnion } from 'firebase/firestore';
 
@@ -17,18 +29,13 @@ export default function ApprovalsPage() {
     const { user } = useAuth();
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(true);
-
-    if (!user) return null;
-    const [activeTab, setActiveTab] = useState<'action' | 'history' | 'all'>('action');
+    const [activeTab, setActiveTab] = useState<'action' | 'history'>('action');
 
     // Modal state
     const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
     const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
     const [rejectComment, setRejectComment] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
-
-    // Download simulation
-    const [isDownloading, setIsDownloading] = useState(false);
 
     useEffect(() => {
         if (!db) {
@@ -37,13 +44,8 @@ export default function ApprovalsPage() {
         }
 
         const unsubscribe = onSnapshot(collection(db, 'proposals'), (snapshot) => {
-            const fetchedProposals: Proposal[] = [];
-            snapshot.forEach((doc) => {
-                fetchedProposals.push({ id: doc.id, ...doc.data() } as Proposal);
-            });
-            // Sort by latest updated first
-            fetchedProposals.sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime());
-            setProposals(fetchedProposals);
+            const fetched = snapshot.docs.map(d => normalizeProposal(d.id, d.data()));
+            setProposals(sortByRecent(fetched));
             setLoading(false);
         }, (error) => {
             console.error("Error fetching proposals:", error);
@@ -52,6 +54,23 @@ export default function ApprovalsPage() {
 
         return () => unsubscribe();
     }, []);
+
+    const relevantProposals = useMemo(
+        () => (user ? visibleProposals(proposals, user) : []),
+        [proposals, user]
+    );
+
+    const actionRequiredProposals = useMemo(
+        () => (user ? actionQueue(relevantProposals, user) : []),
+        [relevantProposals, user]
+    );
+
+    const historyProposals = useMemo(
+        () => (user ? historyQueue(relevantProposals, user) : []),
+        [relevantProposals, user]
+    );
+
+    if (!user) return null;
 
     // SuperAdmins use different page
     if (user.role === 'SuperAdmin') {
@@ -62,35 +81,30 @@ export default function ApprovalsPage() {
         );
     }
 
-    const isAppraisalRole = user.role !== 'User' && user.role !== 'Supervisor';
-
-    // Determine relevant proposals for the user
-    let relevantProposals = [...proposals];
-
-    // If standard user, they just see their own generated stuff
-    if (user.role === 'User') {
-        relevantProposals = proposals.filter(p => p.submitterId === user.id);
-    }
-
-    // Filter based on tabs for Appraisal roles
-    const actionRequiredProposals = relevantProposals.filter(p => {
-        if (user.role === 'SubDeptHead') return p.status === 'Pending Sub Dept';
-        if (user.role === 'FinanceHead') return p.status === 'Pending Finance';
-        if (user.role === 'RegionHead') return p.status === 'Pending Region';
-        if (user.role === 'Supervisor') return p.status === 'Pending Supervisor';
-        return false;
-    });
-
-    const historyProposals = relevantProposals.filter(p => !actionRequiredProposals.includes(p));
+    const isAppraisalRole = user.role !== 'User';
 
     const displayProposals = user.role === 'User'
         ? relevantProposals
         : (activeTab === 'action' ? actionRequiredProposals : historyProposals);
 
     const handleDownload = () => {
-        setIsDownloading(true);
-        alert("Downloading Approvals Report (CSV)...");
-        setTimeout(() => setIsDownloading(false), 2000);
+        downloadCsv(
+            `regina-approvals-${new Date().toISOString().slice(0, 10)}.csv`,
+            ['No. Proposal', 'Judul', 'Tipe', 'Dealer', 'Pengaju', 'Sumber Budget', 'G/L Account', 'Nilai (Rp)', 'Status', 'Tanggal Pengajuan', 'Update Terakhir'],
+            displayProposals.map(p => [
+                displayTrackingId(p),
+                p.title,
+                p.type ?? '',
+                p.dealer ?? '',
+                p.submitterName ?? p.submitterId,
+                p.budgetSource ?? '',
+                p.glAccountCode ?? '',
+                p.amount,
+                p.status,
+                formatDate(p.dateSubmitted),
+                formatDate(p.lastUpdated),
+            ])
+        );
     };
 
     const getStatusBadge = (status: string) => {
@@ -101,37 +115,24 @@ export default function ApprovalsPage() {
         }
     };
 
-    const proceedToNextStatus = (currentStatus: ProposalStatus): ProposalStatus => {
-        switch (currentStatus) {
-            case 'Pending Supervisor': return 'Pending Sub Dept';
-            case 'Pending Sub Dept': return 'Pending Finance';
-            case 'Pending Finance': return 'Pending Region';
-            case 'Pending Region': return 'Approved';
-            default: return currentStatus; // Shouldn't happen
-        }
-    };
-
     const handleApprove = async (proposal: Proposal) => {
         if (!db) return;
+        // Re-check against the live document: the queue may have moved on since render.
+        if (!canActOn(proposal, user)) {
+            alert("Proposal ini tidak lagi menunggu persetujuan Anda.");
+            return;
+        }
         setIsUpdating(true);
         try {
-            const nextStatus = proceedToNextStatus(proposal.status);
             const proposalRef = doc(db, 'proposals', proposal.id);
-            const newHistoryItem = {
-                date: new Date().toISOString(),
-                action: 'Approved' as const,
-                byUserId: user.id,
-                byRole: user.role
-            };
-
             await updateDoc(proposalRef, {
-                status: nextStatus,
+                status: nextStatus(proposal),
                 lastUpdated: new Date().toISOString(),
-                history: arrayUnion(newHistoryItem)
+                history: arrayUnion(buildHistoryEntry('Approved', user))
             });
         } catch (error) {
             console.error("Error approving proposal: ", error);
-            alert("Failed to approve. Please try again.");
+            alert("Gagal menyetujui proposal. Silakan coba lagi.");
         } finally {
             setIsUpdating(false);
         }
@@ -139,27 +140,25 @@ export default function ApprovalsPage() {
 
     const handleReject = async () => {
         if (!db || !selectedProposal) return;
+        if (!canActOn(selectedProposal, user)) {
+            alert("Proposal ini tidak lagi menunggu keputusan Anda.");
+            setIsRejectModalOpen(false);
+            setSelectedProposal(null);
+            return;
+        }
         setIsUpdating(true);
         try {
             const proposalRef = doc(db, 'proposals', selectedProposal.id);
-            const newHistoryItem = {
-                date: new Date().toISOString(),
-                action: 'Rejected' as const,
-                byUserId: user.id,
-                byRole: user.role,
-                comment: rejectComment
-            };
-
             await updateDoc(proposalRef, {
                 status: 'Rejected',
                 lastUpdated: new Date().toISOString(),
-                history: arrayUnion(newHistoryItem)
+                history: arrayUnion(buildHistoryEntry('Rejected', user, rejectComment))
             });
             setIsRejectModalOpen(false);
             setRejectComment('');
         } catch (error) {
             console.error("Error rejecting proposal: ", error);
-            alert("Failed to reject. Please try again.");
+            alert("Gagal menolak proposal. Silakan coba lagi.");
         } finally {
             setIsUpdating(false);
             setSelectedProposal(null);
@@ -177,9 +176,14 @@ export default function ApprovalsPage() {
                         {isAppraisalRole ? 'Review and action pending budget proposals.' : 'Monitor the progress of your submitted budget proposals.'}
                     </p>
                 </div>
-                <Button onClick={handleDownload} disabled={isDownloading} variant="outline" className="self-start sm:self-auto bg-white">
+                <Button
+                    onClick={handleDownload}
+                    disabled={displayProposals.length === 0}
+                    variant="outline"
+                    className="self-start sm:self-auto bg-white"
+                >
                     <DownloadCloud className="mr-2 h-4 w-4" />
-                    {isDownloading ? 'Preparing...' : 'Export List'}
+                    Export List (CSV)
                 </Button>
             </div>
 
@@ -255,13 +259,30 @@ export default function ApprovalsPage() {
                                         <div className="flex flex-col gap-1">
                                             <span className="font-semibold text-slate-900 truncate" title={proposal.title}>{proposal.title}</span>
                                             <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-600">{proposal.id}</span>
+                                                <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-600">{displayTrackingId(proposal)}</span>
                                                 <span>•</span>
                                                 <span>{proposal.type}</span>
                                             </div>
-                                            <div className="text-xs text-slate-400 flex items-center mt-1">
-                                                <Clock className="mr-1 h-3 w-3" />
-                                                {new Date(proposal.dateSubmitted).toLocaleDateString()}
+                                            <div className="text-xs text-slate-500">
+                                                {proposal.dealer}
+                                                {proposal.submitterName ? ` — ${proposal.submitterName}` : ''}
+                                            </div>
+                                            <div className="text-xs text-slate-400 flex items-center gap-3 mt-1">
+                                                <span className="flex items-center">
+                                                    <Clock className="mr-1 h-3 w-3" />
+                                                    {formatDate(proposal.dateSubmitted)}
+                                                </span>
+                                                {proposal.attachmentUrl && (
+                                                    <a
+                                                        href={proposal.attachmentUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="flex items-center text-blue-600 hover:underline"
+                                                    >
+                                                        <Paperclip className="mr-1 h-3 w-3" />
+                                                        Lampiran
+                                                    </a>
+                                                )}
                                             </div>
                                         </div>
                                     </TableCell>
@@ -270,9 +291,15 @@ export default function ApprovalsPage() {
                                             <span className="font-bold text-slate-900">
                                                 {formatCurrency(proposal.amount)}
                                             </span>
-                                            <span className="text-xs font-mono text-slate-500">
-                                                {proposal.glAccountCode}
+                                            <span className="text-xs text-slate-500">
+                                                {proposal.budgetSource ?? 'GL Account'}
+                                                {proposal.glAccountCode ? ` • ${proposal.glAccountCode}` : ''}
                                             </span>
+                                            {typeof proposal.currentBalance === 'number' && (
+                                                <span className="text-xs text-slate-500">
+                                                    Saldo: {formatCurrency(proposal.currentBalance)}
+                                                </span>
+                                            )}
                                             <div className="mt-1">
                                                 {getStatusBadge(proposal.status)}
                                             </div>
@@ -281,10 +308,14 @@ export default function ApprovalsPage() {
                                     <TableCell>
                                         <div className="py-4">
                                             {/* Timeline scales down to fit cell */}
-                                            <StatusTimeline status={proposal.status} />
+                                            <StatusTimeline
+                                                status={proposal.status}
+                                                skipRegionHead={proposal.skipRegionHeadApproval}
+                                                history={proposal.history}
+                                            />
                                         </div>
                                         {/* Latest Comment (if rejected and looking at history) */}
-                                        {proposal.status === 'Rejected' && activeTab === 'history' && proposal.history.find(h => h.action === 'Rejected') && (
+                                        {proposal.status === 'Rejected' && proposal.history.find(h => h.action === 'Rejected')?.comment && (
                                             <div className="mt-2 text-xs italic text-red-600 bg-red-50 p-2 rounded border border-red-100">
                                                 "{proposal.history.find(h => h.action === 'Rejected')?.comment}"
                                             </div>
@@ -298,7 +329,7 @@ export default function ApprovalsPage() {
                                                     variant="outline"
                                                     size="sm"
                                                     className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
-                                                    disabled={isUpdating}
+                                                    disabled={isUpdating || !canActOn(proposal, user)}
                                                     onClick={() => {
                                                         setSelectedProposal(proposal);
                                                         setIsRejectModalOpen(true);
@@ -309,7 +340,7 @@ export default function ApprovalsPage() {
                                                 <Button
                                                     size="sm"
                                                     className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
-                                                    disabled={isUpdating}
+                                                    disabled={isUpdating || !canActOn(proposal, user)}
                                                     onClick={() => handleApprove(proposal)}
                                                 >
                                                     <Check className="mr-1 h-4 w-4" /> Approve

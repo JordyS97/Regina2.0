@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminAuth } from '@/lib/firebase-admin';
+import { requireSuperAdmin, isGuardFailure } from '@/lib/admin-guard';
 
 export async function POST(request: Request) {
     if (!adminAuth) {
@@ -10,16 +11,19 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { uid, password, requesterIdToken } = body;
 
-        if (!uid || !password || !requesterIdToken) {
+        // The client-side role check is only a UI affordance — enforce it here.
+        const guard = await requireSuperAdmin(requesterIdToken);
+        if (isGuardFailure(guard)) {
+            return NextResponse.json({ error: guard.error }, { status: guard.status });
+        }
+
+        if (!uid || !password) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Verify the requester is a valid user
-        const decodedToken = await adminAuth.verifyIdToken(requesterIdToken);
-
-        // You could theoretically also check their role in Firestore here, 
-        // but verifyIdToken prevents unauthenticated requests. 
-        // We'll trust the client UI's role block for this simple implementation.
+        if (typeof password !== 'string' || password.length < 6) {
+            return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+        }
 
         await adminAuth.updateUser(uid, { password });
 

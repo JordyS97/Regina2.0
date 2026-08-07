@@ -1,11 +1,14 @@
 import React from 'react';
-import { ProposalStatus, Role } from '@/lib/types';
+import { ProposalHistory, ProposalStatus, Role } from '@/lib/types';
 import { Check, Clock, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { APPROVAL_CHAIN } from '@/lib/proposals';
 
 interface StatusTimelineProps {
     status: ProposalStatus;
     skipRegionHead?: boolean;
+    /** Used to place the ✗ marker on the desk that actually rejected the proposal. */
+    history?: ProposalHistory[];
 }
 
 const steps = [
@@ -16,31 +19,29 @@ const steps = [
     { id: 'RegionHead', label: 'Region Hub', role: 'RegionHead' as Role },
 ];
 
-export function StatusTimeline({ status, skipRegionHead = false }: StatusTimelineProps) {
+export function StatusTimeline({ status, skipRegionHead = false, history = [] }: StatusTimelineProps) {
     const activeSteps = skipRegionHead
         ? steps.filter(s => s.role !== 'RegionHead')
         : steps;
 
-    // Determine current step index based on status
-    let currentIndex = 0;
-    let isRejected = status === 'Rejected';
+    const isRejected = status === 'Rejected';
+
+    // Resolve the index off the rendered steps so a skipped Region Head stage
+    // can never push the marker past the end of the list.
+    const indexForRole = (role: Role | undefined) => {
+        const index = activeSteps.findIndex(s => s.role === role);
+        return index === -1 ? activeSteps.length - 1 : index;
+    };
+
+    let currentIndex: number;
 
     if (status === 'Approved') {
         currentIndex = activeSteps.length - 1; // All steps passed (last step index)
-    } else if (status === 'Pending Supervisor') {
-        currentIndex = 1;
-    } else if (status === 'Pending Sub Dept') {
-        currentIndex = 2;
-    } else if (status === 'Pending Finance') {
-        currentIndex = 3;
-    } else if (status === 'Pending Region') {
-        currentIndex = 4;
-    } else if (status === 'Rejected') {
-        // We would ideally know *who* rejected it to show the timeline accurately,
-        // but for the mockup, we'll mark it rejected at the current assumed stage.
-        // Assuming rejection stops the timeline.
-        // In a real app we'd parse the history.
-        currentIndex = 1;
+    } else if (isRejected) {
+        // The rejecting role tells us exactly where the flow stopped.
+        currentIndex = indexForRole(history.find(h => h.action === 'Rejected')?.byRole);
+    } else {
+        currentIndex = indexForRole(APPROVAL_CHAIN.find(step => step.status === status)?.role);
     }
 
     return (

@@ -1,25 +1,35 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/auth-context';
 import { Save, UserCircle } from 'lucide-react';
+import { auth, db } from '@/lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { updatePassword } from 'firebase/auth';
 
 export default function ProfilePage() {
-    const { user } = useAuth();
+    const { user, refreshUser } = useAuth();
 
-    if (!user) return null;
     const [isSaved, setIsSaved] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState('');
 
-    // Initialize with mock user data
     const [formData, setFormData] = useState({
-        name: user.name,
-        email: user.email,
+        name: '',
+        email: '',
         password: '',
         confirmPassword: ''
     });
+
+    // Seed the form once the profile is available.
+    useEffect(() => {
+        if (user) {
+            setFormData(prev => ({ ...prev, name: user.name, email: user.email }));
+        }
+    }, [user?.id, user?.name, user?.email]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setFormData(prev => ({
@@ -28,11 +38,53 @@ export default function ProfilePage() {
         }));
     };
 
-    const handleSave = (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsSaved(true);
-        setTimeout(() => setIsSaved(false), 2000);
+        if (!user) return;
+        setError('');
+
+        if (!formData.name.trim()) {
+            setError('Nama tidak boleh kosong.');
+            return;
+        }
+
+        if (formData.password && formData.password !== formData.confirmPassword) {
+            setError('Konfirmasi password tidak cocok.');
+            return;
+        }
+
+        if (formData.password && formData.password.length < 6) {
+            setError('Password minimal 6 karakter.');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            if (db && formData.name.trim() !== user.name) {
+                await updateDoc(doc(db, 'users', user.id), { name: formData.name.trim() });
+            }
+
+            if (formData.password && auth?.currentUser) {
+                await updatePassword(auth.currentUser, formData.password);
+            }
+
+            await refreshUser();
+            setFormData(prev => ({ ...prev, password: '', confirmPassword: '' }));
+            setIsSaved(true);
+            setTimeout(() => setIsSaved(false), 2000);
+        } catch (err: any) {
+            // Firebase requires a recent login before a password change.
+            setError(
+                err?.code === 'auth/requires-recent-login'
+                    ? 'Demi keamanan, silakan logout dan login kembali sebelum mengganti password.'
+                    : err?.message || 'Gagal menyimpan perubahan.'
+            );
+        } finally {
+            setIsSaving(false);
+        }
     };
+
+    if (!user) return null;
 
     if (user.role === 'SuperAdmin') {
         return (
@@ -79,9 +131,13 @@ export default function ProfilePage() {
                                     type="email"
                                     name="email"
                                     value={formData.email}
-                                    onChange={handleChange}
-                                    placeholder="john@company.com"
+                                    disabled
+                                    readOnly
+                                    className="bg-slate-100 text-slate-600"
                                 />
+                                <p className="text-xs text-slate-500">
+                                    Email adalah identitas login Anda dan hanya dapat diubah oleh Super Admin.
+                                </p>
                             </div>
 
                             <div className="pt-4 mt-4 border-t border-slate-100">
@@ -112,11 +168,25 @@ export default function ProfilePage() {
                             </div>
 
                         </div>
+                        {error && (
+                            <div className="p-3 rounded-md bg-red-50 text-red-600 text-sm font-medium border border-red-100">
+                                {error}
+                            </div>
+                        )}
                     </CardContent>
                     <CardFooter className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/50 mt-6 rounded-b-xl">
-                        <Button type="button" variant="outline">Cancel</Button>
-                        <Button type="submit" disabled={isSaved}>
-                            {isSaved ? 'Saved!' : (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                setFormData({ name: user.name, email: user.email, password: '', confirmPassword: '' });
+                                setError('');
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button type="submit" disabled={isSaved || isSaving}>
+                            {isSaving ? 'Menyimpan...' : isSaved ? 'Saved!' : (
                                 <>
                                     <Save className="mr-2 h-4 w-4" />
                                     Save Changes

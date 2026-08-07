@@ -12,10 +12,50 @@ interface AuthContextType {
     user: User | null;
     loading: boolean;
     logout: () => Promise<void>;
+    /** Re-reads the profile document, e.g. after the user edits it. */
+    refreshUser: () => Promise<void>;
     users: User[]; // keeping for fallback/mock UI compatibility
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/**
+ * Bootstrap escape hatch: the very first sign-in with this address is granted
+ * SuperAdmin so the directory can be seeded. Leave it unset in production —
+ * every other account is created by a Super Admin through User Management.
+ */
+const BOOTSTRAP_ADMIN_EMAIL = process.env.NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL?.toLowerCase();
+
+/** Reads the Firestore profile for a signed-in account, creating it on first login. */
+async function loadProfile(firebaseUser: { uid: string; email: string | null; displayName: string | null }): Promise<User | null> {
+    if (!db) throw new Error("Firestore is not initialized.");
+
+    const userDocRef = doc(db, 'users', firebaseUser.uid);
+    const userDoc = await getDoc(userDocRef);
+
+    if (userDoc.exists()) {
+        // The document id is the source of truth for the user id.
+        return { ...(userDoc.data() as User), id: firebaseUser.uid };
+    }
+
+    const email = firebaseUser.email || '';
+    const isBootstrapAdmin = !!BOOTSTRAP_ADMIN_EMAIL && email.toLowerCase() === BOOTSTRAP_ADMIN_EMAIL;
+    const defaultUser: User = {
+        id: firebaseUser.uid,
+        email,
+        name: firebaseUser.displayName || email.split('@')[0] || 'New User',
+        role: isBootstrapAdmin ? 'SuperAdmin' : 'User',
+        department: 'General',
+    };
+
+    try {
+        await setDoc(userDocRef, defaultUser);
+    } catch (e) {
+        console.warn("Could not write initial user to Firestore (check rules):", e);
+    }
+
+    return defaultUser;
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
@@ -33,32 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: any) => {
             if (firebaseUser) {
                 try {
-                    if (!db) throw new Error("Firestore is not initialized.");
-                    // Fetch extended user info directly from Firestore
-                    const userDocRef = doc(db, 'users', firebaseUser.uid);
-                    const userDoc = await getDoc(userDocRef);
-
-                    if (userDoc.exists()) {
-                        setUser(userDoc.data() as User);
-                    } else {
-                        // New user, create default profile
-                        const isTestingAdmin = firebaseUser.email === 'admin@email.com';
-                        const defaultUser = {
-                            id: firebaseUser.uid,
-                            email: firebaseUser.email || '',
-                            name: firebaseUser.displayName || (isTestingAdmin ? 'Super Admin' : firebaseUser.email?.split('@')[0] || 'New User'),
-                            role: isTestingAdmin ? 'SuperAdmin' : 'User',
-                            department: 'General', // Default department
-                        };
-
-                        try {
-                            await setDoc(userDocRef, defaultUser);
-                        } catch (e) {
-                            console.warn("Could not write initial user to Firestore (check rules):", e);
-                        }
-
-                        setUser(defaultUser as User);
-                    }
+                    setUser(await loadProfile(firebaseUser));
                 } catch (error) {
                     console.error("Error fetching user data from Firestore:", error);
                     setUser(null);
@@ -71,6 +86,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         return () => unsubscribe();
     }, []);
+
+    const refreshUser = async () => {
+        if (!auth?.currentUser) return;
+        try {
+            setUser(await loadProfile(auth.currentUser));
+        } catch (error) {
+            console.error("Error refreshing user profile:", error);
+        }
+    };
 
     useEffect(() => {
         if (!loading) {
@@ -106,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, logout, users: MOCK_USERS }}>
+        <AuthContext.Provider value={{ user, loading, logout, refreshUser, users: MOCK_USERS }}>
             {!loading && children}
         </AuthContext.Provider>
     );

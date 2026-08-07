@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { MOCK_GL_ACCOUNTS } from '@/lib/mock-data';
+import { MOCK_GL_ACCOUNTS, MOCK_DEALERS } from '@/lib/mock-data';
 import { useAuth } from '@/context/auth-context';
 import { CheckCircle2, FileText, AlertTriangle, Paperclip, Plus, Trash2, UploadCloud } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
@@ -13,10 +13,9 @@ import { Badge } from '@/components/ui/badge';
 import { db, storage } from '@/lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { ProposalType, ItemizedCost } from '@/lib/types';
+import { ProposalType, ItemizedCost, BudgetSource, Dealer } from '@/lib/types';
+import { SUBMITTER_ROLES, initialStatus, buildTrackingId, buildHistoryEntry } from '@/lib/proposals';
 import * as XLSX from 'xlsx';
-
-type BudgetSource = 'GL Account' | 'Added Fee (Biaya Titipan C6)' | 'Retail JoinProm';
 
 export default function SubmissionPage() {
     const { user } = useAuth();
@@ -30,6 +29,7 @@ export default function SubmissionPage() {
     const [type, setType] = useState<ProposalType | ''>('');
     const [budgetSource, setBudgetSource] = useState<BudgetSource>('GL Account');
     const [glAccount, setGlAccount] = useState('');
+    const [dealer, setDealer] = useState<Dealer | ''>('');
 
     // Amounts & Tables
     const [amount, setAmount] = useState<number>(0);
@@ -40,15 +40,6 @@ export default function SubmissionPage() {
     const [file, setFile] = useState<File | null>(null); // Main PDF/Docs
     const [excelFile, setExcelFile] = useState<File | null>(null); // For Added Fee
     const [excelError, setExcelError] = useState('');
-
-    // Access restriction
-    if (!user || (user.role !== 'User' && user.role !== 'Supervisor')) {
-        return (
-            <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-slate-500">You do not have permission to view this page.</div>
-            </div>
-        );
-    }
 
     // --- Dynamic Table Logic (For GL Account) ---
     const handleItemChange = (index: number, field: keyof ItemizedCost, value: any) => {
@@ -82,6 +73,12 @@ export default function SubmissionPage() {
             setCurrentBalance('');
         }
     }, [budgetSource]);
+
+    // Default the branch to the one on the user's profile; Supervisors cover
+    // several dealers, so they pick per proposal.
+    useEffect(() => {
+        if (user?.dealer) setDealer(user.dealer);
+    }, [user?.dealer]);
 
     // --- Excel Parsing Logic (For Added Fee) ---
     const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,32 +146,44 @@ export default function SubmissionPage() {
     // --- Submission Logic ---
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!user) return;
 
         // Validation based on type
         const requiresPDF = type === 'Perbaikan AC / mobil / motor / asset lain' || type === 'Sewa Gudang';
         if (requiresPDF && !file) {
-            alert("This proposal type requires a supporting Document/PDF to be attached.");
+            alert("Tipe pengajuan ini wajib melampirkan Dokumen/PDF pendukung.");
             return;
         }
 
         if (budgetSource === 'GL Account' && !glAccount) {
-            alert("Please select a G/L Account.");
+            alert("Silakan pilih G/L Account.");
+            return;
+        }
+
+        if (!dealer) {
+            alert("Silakan pilih Dealer/Cabang pengaju.");
             return;
         }
 
         if (amount <= 0) {
-            alert("Requested amount must be greater than 0.");
+            alert("Nilai pengajuan harus lebih besar dari 0.");
             return;
         }
 
         if ((budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' && amount > currentBalance) {
-            alert("Error: Requested amount exceeds the available budget balance.");
+            alert("Error: Nilai pengajuan melebihi saldo budget yang tersedia.");
+            return;
+        }
+
+        if (!db) {
+            alert("Firebase belum dikonfigurasi, proposal tidak dapat dikirim.");
             return;
         }
 
         try {
             setIsSubmitting(true);
-            let attachmentUrl = null;
+            let attachmentUrl: string | null = null;
+            let excelUrl: string | null = null;
 
             // Upload main supporting file
             if (file && storage) {
@@ -183,42 +192,50 @@ export default function SubmissionPage() {
                 attachmentUrl = await getDownloadURL(uploadResult.ref);
             }
 
-            // (Optional) Could also upload the excelFile if needed, omitting for now unless required
-
-            if (db) {
-                const trackingId = `P${new Date().getFullYear()}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
-
-                // Assemble the generic payload safely mapped to the updated type
-                const payload = {
-                    trackingId,
-                    title,
-                    subtitle,
-                    background,
-                    type,
-                    amount,
-                    budgetSource,
-                    glAccountCode: budgetSource === 'GL Account' ? glAccount : '',
-                    items: budgetSource === 'GL Account' ? items : [],
-                    dealer: "H531-SO BIMA", // Mocked default
-                    status: 'Pending Supervisor',
-                    submittedBy: {
-                        id: user.id || 'unknown',
-                        name: user.name,
-                        department: user.department
-                    },
-                    history: [
-                        {
-                            status: 'Pending Supervisor',
-                            date: new Date().toISOString(),
-                            actor: { id: user.id || 'unknown', name: user.name, role: user.role }
-                        }
-                    ],
-                    attachmentUrl,
-                    createdAt: serverTimestamp()
-                };
-
-                await addDoc(collection(db, 'proposals'), payload);
+            // The Added Fee spreadsheet is the evidence behind the available
+            // balance, so approvers need it stored alongside the proposal.
+            if (excelFile && storage) {
+                const excelRef = ref(storage, `proposals/${Date.now()}_${excelFile.name}`);
+                const uploadResult = await uploadBytes(excelRef, excelFile);
+                excelUrl = await getDownloadURL(uploadResult.ref);
             }
+
+            const now = new Date().toISOString();
+            const status = initialStatus(user.role);
+            const sequence = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
+
+            const payload = {
+                trackingId: buildTrackingId(dealer, sequence),
+                title,
+                subtitle,
+                background,
+                // Kept for list views that show a one-line summary.
+                description: subtitle || background || title,
+                type,
+                amount,
+                currentBalance: typeof currentBalance === 'number' ? currentBalance : null,
+                budgetSource,
+                glAccountCode: budgetSource === 'GL Account' ? glAccount : '',
+                // The rincian table applies to every budget source, so always persist it.
+                items,
+                dealer,
+                status,
+                submitterId: user.id,
+                submitterName: user.name,
+                submitterRole: user.role,
+                department: user.department ?? '',
+                history: [buildHistoryEntry('Submitted', user)],
+                skipRegionHeadApproval: false,
+                attachmentUrl,
+                attachmentName: file?.name ?? null,
+                excelUrl,
+                excelName: excelFile?.name ?? null,
+                dateSubmitted: now,
+                lastUpdated: now,
+                createdAt: serverTimestamp()
+            };
+
+            await addDoc(collection(db, 'proposals'), payload);
 
             setIsSubmitted(true);
             setTimeout(() => {
@@ -228,14 +245,24 @@ export default function SubmissionPage() {
                 setGlAccount(''); setAmount(0); setCurrentBalance('');
                 setItems([{ id: '1', item: '', qty: 1, price: 0, total: 0, m1: '' }]);
                 setFile(null); setExcelFile(null); setExcelError('');
+                setDealer(user.dealer ?? '');
             }, 3000);
         } catch (error) {
             console.error("Error submitting proposal:", error);
-            alert("Failed to submit proposal. Make sure Firebase is configured.");
+            alert("Gagal mengirim proposal. Pastikan koneksi dan konfigurasi Firebase sudah benar.");
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    // Access restriction — evaluated after every hook so the hook order stays stable.
+    if (!user || !SUBMITTER_ROLES.includes(user.role)) {
+        return (
+            <div className="flex h-[60vh] items-center justify-center">
+                <div className="text-slate-500">Anda tidak memiliki akses ke halaman ini.</div>
+            </div>
+        );
+    }
 
     const isExceeding = (budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' && amount > currentBalance;
     const remainingAfter = (budgetSource === 'GL Account' || budgetSource === 'Added Fee (Biaya Titipan C6)') && typeof currentBalance === 'number' ? currentBalance - amount : null;
@@ -255,7 +282,9 @@ export default function SubmissionPage() {
                             Proposal Details
                         </CardTitle>
                         <CardDescription>
-                            Proposal akan diteruskan secara otomatis ke atasan (Supervisor) Anda untuk di-review.
+                            {user.role === 'Supervisor'
+                                ? 'Proposal Anda akan langsung diteruskan ke Sub Dept Head (Supervisor tidak menyetujui pengajuannya sendiri).'
+                                : 'Proposal akan diteruskan secara otomatis ke atasan (Supervisor) Anda untuk di-review.'}
                         </CardDescription>
                     </CardHeader>
 
@@ -316,6 +345,26 @@ export default function SubmissionPage() {
                                         { label: 'Retail JoinProm', value: 'Retail JoinProm' },
                                     ]}
                                 />
+                            </div>
+
+                            <div className="space-y-2 md:col-span-2">
+                                <label className="text-sm font-semibold text-slate-900">Dealer / Cabang Pengaju <span className="text-red-500">*</span></label>
+                                <Select
+                                    required
+                                    value={dealer}
+                                    disabled={!!user.dealer}
+                                    onChange={e => setDealer(e.target.value as Dealer)}
+                                    options={[
+                                        { label: 'Pilih dealer...', value: '' },
+                                        ...MOCK_DEALERS.map(d => ({ label: d, value: d })),
+                                    ]}
+                                    className={user.dealer ? 'bg-slate-100 text-slate-600' : ''}
+                                />
+                                <p className="text-xs text-slate-500">
+                                    {user.dealer
+                                        ? 'Diambil otomatis dari profil Anda.'
+                                        : 'Pilih cabang yang mengajukan proposal ini.'}
+                                </p>
                             </div>
                         </div>
 

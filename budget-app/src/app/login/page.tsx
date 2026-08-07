@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Lock, Mail, KeyRound } from 'lucide-react';
 import { auth } from '@/lib/firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 
 export default function LoginPage() {
     const { loading } = useAuth();
@@ -24,21 +24,18 @@ export default function LoginPage() {
         try {
             if (!auth) throw new Error("Firebase Auth is not initialized.");
 
-            // Try to sign in
+            // Accounts are provisioned by a Super Admin in User Management —
+            // signing in must never create one, or anyone could self-enrol.
             await signInWithEmailAndPassword(auth, email, password);
         } catch (err: any) {
-            // If user doesn't exist, auto-create them for testing purposes
-            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
-                try {
-                    await createUserWithEmailAndPassword(auth!, email, password);
-                } catch (signupErr: any) {
-                    setError(signupErr.message);
-                    setIsAuthenticating(false);
-                }
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') {
+                setError('Email atau password salah. Hubungi Super Admin jika akun Anda belum terdaftar.');
+            } else if (err.code === 'auth/too-many-requests') {
+                setError('Terlalu banyak percobaan login. Silakan coba lagi beberapa saat lagi.');
             } else {
                 setError(err.message);
-                setIsAuthenticating(false);
             }
+            setIsAuthenticating(false);
         }
     };
 
@@ -117,7 +114,7 @@ export default function LoginPage() {
                         </Button>
 
                         <p className="text-xs text-center text-slate-500 pt-4 px-4">
-                            For testing: Enter any email/password. If the account doesn't exist, it will auto-register as a Standard User.
+                            Akun dibuat oleh Super Admin melalui menu User Management. Hubungi Super Admin untuk pendaftaran atau reset password.
                         </p>
                     </form>
                 </CardContent>

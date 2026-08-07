@@ -42,24 +42,37 @@ export interface ItemizedCost {
     m1?: string;
 }
 
+export type BudgetSource = 'GL Account' | 'Added Fee (Biaya Titipan C6)' | 'Retail JoinProm';
+
 export interface Proposal {
     id: string;
+    /** Human-readable reference (MMC.001/H534/VIII/2026) shown to users. */
+    trackingId?: string;
     title: string;
     subtitle?: string;
     background?: string;
-    budgetSource?: 'GL Account' | 'Added Fee' | 'Retail JoinProm';
+    budgetSource?: BudgetSource;
     items?: ItemizedCost[];
     type: ProposalType;
     amount: number;
+    /** Budget balance declared/derived at submission time, used for the over-budget check. */
+    currentBalance?: number;
     glAccountCode: string;
     description: string;
     submitterId: string;
+    submitterName?: string;
+    submitterRole?: Role;
+    department?: string;
     dealer: Dealer;
     status: ProposalStatus;
     dateSubmitted: string;
     lastUpdated: string;
     history: ProposalHistory[];
     skipRegionHeadApproval?: boolean;
+    attachmentUrl?: string | null;
+    attachmentName?: string | null;
+    excelUrl?: string | null;
+    excelName?: string | null;
 }
 
 export interface ProposalHistory {

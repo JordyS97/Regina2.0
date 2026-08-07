@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebase-admin';
+import { requireSuperAdmin, isGuardFailure } from '@/lib/admin-guard';
+import { Role } from '@/lib/types';
+
+const ALLOWED_ROLES: Role[] = ['User', 'Supervisor', 'SubDeptHead', 'FinanceHead', 'RegionHead', 'SuperAdmin'];
 
 export async function POST(request: Request) {
     if (!adminAuth || !adminDb) {
@@ -10,12 +14,18 @@ export async function POST(request: Request) {
         const body = await request.json();
         const { email, password, name, role, dealer, requesterIdToken } = body;
 
-        if (!email || !password || !requesterIdToken) {
+        const guard = await requireSuperAdmin(requesterIdToken);
+        if (isGuardFailure(guard)) {
+            return NextResponse.json({ error: guard.error }, { status: guard.status });
+        }
+
+        if (!email || !password) {
             return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
         }
 
-        // Verify the requester
-        await adminAuth.verifyIdToken(requesterIdToken);
+        if (role && !ALLOWED_ROLES.includes(role)) {
+            return NextResponse.json({ error: "Unknown role" }, { status: 400 });
+        }
 
         // 1. Create the user in Firebase Auth
         const userRecord = await adminAuth.createUser({
@@ -26,10 +36,12 @@ export async function POST(request: Request) {
 
         // 2. Create the user document in Firestore
         await adminDb.collection("users").doc(userRecord.uid).set({
+            id: userRecord.uid,
             email,
             name: name || "New User",
             role: role || "User",
-            dealer: dealer || "",
+            // Only a plain User is tied to a single branch; approvers are cross-dealer.
+            dealer: role === 'User' ? (dealer || "") : "",
             department: "General"
         });
 

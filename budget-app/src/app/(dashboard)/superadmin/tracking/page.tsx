@@ -1,22 +1,63 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/context/auth-context';
-import { MOCK_PROPOSALS } from '@/lib/mock-data';
+import { Proposal } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
+import { db } from '@/lib/firebase';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import {
+    bottleneckLabel,
+    displayTrackingId,
+    isPending,
+    normalizeProposal,
+    sortByRecent,
+} from '@/lib/proposals';
 
 export default function TrackingPage() {
     const { user } = useAuth();
+    const [searchQuery, setSearchQuery] = useState('');
+    const [proposals, setProposals] = useState<Proposal[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!db) {
+            setLoading(false);
+            return;
+        }
+
+        const unsubscribe = onSnapshot(collection(db, 'proposals'), (snapshot) => {
+            const fetched = snapshot.docs.map(d => normalizeProposal(d.id, d.data()));
+            setProposals(sortByRecent(fetched));
+            setLoading(false);
+        }, (error) => {
+            console.error("Error fetching proposals:", error);
+            setLoading(false);
+        });
+
+        return () => unsubscribe();
+    }, []);
+
+    const filteredProposals = useMemo(() => {
+        const query = searchQuery.trim().toLowerCase();
+        if (!query) return proposals;
+        return proposals.filter(p =>
+            displayTrackingId(p).toLowerCase().includes(query) ||
+            p.id.toLowerCase().includes(query) ||
+            (p.dealer ?? '').toLowerCase().includes(query) ||
+            (p.submitterName ?? '').toLowerCase().includes(query) ||
+            p.title.toLowerCase().includes(query)
+        );
+    }, [proposals, searchQuery]);
 
     if (!user) return null;
-    const [searchQuery, setSearchQuery] = React.useState('');
-    const [proposals, setProposals] = React.useState(MOCK_PROPOSALS);
 
     if (user.role !== 'SuperAdmin') {
         return (
@@ -26,48 +67,36 @@ export default function TrackingPage() {
         );
     }
 
-    const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-
-    const generateProposalId = (proposal: any) => {
-        // e.g., 'PROP-2024-001' -> '001'
-        const propNum = proposal.id.split('-').pop();
-        // e.g., 'H534-SO AMPENAN' -> 'H534'
-        const dealerCode = proposal.dealer.split('-')[0];
-        const date = new Date(proposal.dateSubmitted);
-        const romanMonth = ROMAN_MONTHS[date.getMonth()];
-        const year = date.getFullYear();
-
-        return `MMC.${propNum}/${dealerCode}/${romanMonth}/${year}`;
-    };
-
-    const filteredProposals = proposals.filter(p =>
-        generateProposalId(p).toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.dealer.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.title.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    const toggleRegionApproval = (id: string) => {
-        setProposals(prev => prev.map(p => {
-            if (p.id === id) {
-                return { ...p, skipRegionHeadApproval: !p.skipRegionHeadApproval };
+    /**
+     * Persists the Region Head bypass. Approvals routing reads this flag, so a
+     * proposal already sitting at 'Pending Region' would be stranded by a late
+     * switch — it is closed out instead.
+     */
+    const toggleRegionApproval = async (proposal: Proposal) => {
+        if (!db) return;
+        const skip = !proposal.skipRegionHeadApproval;
+        setUpdatingId(proposal.id);
+        try {
+            const updates: Record<string, unknown> = {
+                skipRegionHeadApproval: skip,
+                lastUpdated: new Date().toISOString(),
+            };
+            if (skip && proposal.status === 'Pending Region') {
+                updates.status = 'Approved';
             }
-            return p;
-        }));
+            await updateDoc(doc(db, 'proposals', proposal.id), updates);
+        } catch (error) {
+            console.error("Error updating region approval flag:", error);
+            alert("Gagal memperbarui pengaturan approval Region Head.");
+        } finally {
+            setUpdatingId(null);
+        }
     };
 
     const getStatusBadge = (status: string) => {
         if (status === 'Approved') return <Badge variant="success">Approved</Badge>;
         if (status === 'Rejected') return <Badge variant="destructive">Rejected</Badge>;
         return <Badge variant="warning">{status}</Badge>;
-    };
-
-    const getBottleneck = (status: string) => {
-        if (status === 'Pending Supervisor') return 'Supervisor Level';
-        if (status === 'Pending Sub Dept') return 'Sub-Department Head';
-        if (status === 'Pending Finance') return 'Finance Head';
-        if (status === 'Pending Region') return 'Region Head';
-        return '-';
     };
 
     return (
@@ -106,20 +135,31 @@ export default function TrackingPage() {
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {filteredProposals.length === 0 ? (
+                            {loading ? (
                                 <TableRow>
                                     <TableCell colSpan={7} className="h-24 text-center text-slate-500">
-                                        No proposals found matching "{searchQuery}"
+                                        Loading proposals...
+                                    </TableCell>
+                                </TableRow>
+                            ) : filteredProposals.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={7} className="h-24 text-center text-slate-500">
+                                        {searchQuery
+                                            ? `No proposals found matching "${searchQuery}"`
+                                            : 'Belum ada proposal yang masuk ke sistem.'}
                                     </TableCell>
                                 </TableRow>
                             ) : (
                                 filteredProposals.map((proposal) => (
                                     <TableRow key={proposal.id}>
                                         <TableCell className="pl-6 font-mono text-xs font-semibold whitespace-nowrap">
-                                            {generateProposalId(proposal)}
+                                            {displayTrackingId(proposal)}
                                         </TableCell>
                                         <TableCell>
                                             <div className="text-sm text-slate-700 whitespace-nowrap">{proposal.dealer}</div>
+                                            {proposal.submitterName && (
+                                                <div className="text-xs text-slate-500 whitespace-nowrap">{proposal.submitterName}</div>
+                                            )}
                                         </TableCell>
                                         <TableCell>
                                             <div className="font-semibold text-slate-900">{proposal.title}</div>
@@ -127,9 +167,9 @@ export default function TrackingPage() {
                                         </TableCell>
                                         <TableCell>{getStatusBadge(proposal.status)}</TableCell>
                                         <TableCell>
-                                            {proposal.status.includes('Pending') ? (
+                                            {isPending(proposal.status) ? (
                                                 <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20">
-                                                    {getBottleneck(proposal.status)}
+                                                    {bottleneckLabel(proposal.status)}
                                                 </span>
                                             ) : (
                                                 <span className="text-slate-400 text-xs text-center block w-8">-</span>
@@ -137,8 +177,9 @@ export default function TrackingPage() {
                                         </TableCell>
                                         <TableCell className="text-center">
                                             <button
-                                                onClick={() => toggleRegionApproval(proposal.id)}
-                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${proposal.skipRegionHeadApproval ? 'bg-slate-300' : 'bg-blue-600'
+                                                onClick={() => toggleRegionApproval(proposal)}
+                                                disabled={updatingId === proposal.id}
+                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${proposal.skipRegionHeadApproval ? 'bg-slate-300' : 'bg-blue-600'
                                                     }`}
                                                 role="switch"
                                                 aria-checked={!proposal.skipRegionHeadApproval}
@@ -154,7 +195,11 @@ export default function TrackingPage() {
                                         </TableCell>
                                         <TableCell className="pr-6 py-4 bg-slate-50/30">
                                             <div className="opacity-80 scale-90 origin-left">
-                                                <StatusTimeline status={proposal.status} skipRegionHead={proposal.skipRegionHeadApproval} />
+                                                <StatusTimeline
+                                                    status={proposal.status}
+                                                    skipRegionHead={proposal.skipRegionHeadApproval}
+                                                    history={proposal.history}
+                                                />
                                             </div>
                                         </TableCell>
                                     </TableRow>
