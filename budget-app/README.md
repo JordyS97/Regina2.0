@@ -62,14 +62,27 @@ npm run build    # build produksi
 npm run lint
 ```
 
-## Deploy security rules
+## Deployment
 
-Rules di repo ini adalah bagian dari kontrol akses aplikasi, bukan sekadar contoh.
-Deploy setiap kali berubah:
+**Vercel** (project `ntb-regina2-0`) sudah terhubung ke repo GitHub ini dan otomatis
+build setiap push. Root Directory di-set ke `budget-app`, framework Next.js.
+Push ke `main` → production; push ke branch lain → preview URL.
+
+Variabel `NEXT_PUBLIC_*` di-inline saat build, jadi **setiap kali variabel diubah di
+Vercel, project harus di-redeploy** agar perubahannya ikut terbawa.
+
+**Firebase rules tidak ikut ter-deploy oleh Vercel.** Rules di repo ini adalah bagian
+dari kontrol akses aplikasi, bukan sekadar contoh — selama belum di-deploy, database
+masih memakai rules lama. Deploy manual setiap kali berubah:
 
 ```bash
+cd budget-app
+firebase login
 firebase deploy --only firestore:rules,storage:rules
 ```
+
+Project Firebase (`regina2-1`) sudah dipin di `.firebaserc`, jadi tidak perlu
+flag `--project`.
 
 Ringkasan aturan:
 
