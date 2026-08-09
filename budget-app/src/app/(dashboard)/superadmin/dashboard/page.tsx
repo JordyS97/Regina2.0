@@ -12,12 +12,39 @@ import {
     ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell
 } from 'recharts';
 import {
-    DownloadCloud, TrendingUp, DollarSign, Activity, FilterX,
-    Globe, Users, FileCheck, AlertTriangle
+    DownloadCloud, TrendingUp, Wallet, Activity, FilterX,
+    Globe, Sprout, FileCheck, AlertTriangle, XCircle
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
+import { CHART_ACCENT, CHART_SERIES, STATUS_COLOR } from '@/lib/brand';
+import { PageHeading, StatCard, UtilizationBar } from '@/components/ui/stat-card';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f97316'];
+type TooltipProps = {
+    active?: boolean;
+    label?: string | number;
+    payload?: { name?: string; value: number }[];
+};
+
+function CustomTooltip({ active, payload, label }: TooltipProps) {
+    if (!active || !payload?.length) return null;
+    const heading = label ?? payload[0].name;
+    return (
+        <div className="z-50 rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-lg ring-1 ring-slate-900/5">
+            {heading && <p className="mb-1 font-semibold text-slate-800">{heading}</p>}
+            <p className="font-medium tabular-nums text-slate-700">{formatCurrency(payload[0].value)}</p>
+        </div>
+    );
+}
+
+function CountTooltip({ active, payload }: TooltipProps) {
+    if (!active || !payload?.length) return null;
+    return (
+        <div className="z-50 rounded-lg border border-slate-200 bg-white p-3 text-sm shadow-lg ring-1 ring-slate-900/5">
+            <p className="mb-1 font-semibold text-slate-800">{payload[0].name}</p>
+            <p className="text-slate-600">{payload[0].value} proposal</p>
+        </div>
+    );
+}
 
 export default function SuperAdminDashboardPage() {
     const { user } = useAuth();
@@ -28,10 +55,21 @@ export default function SuperAdminDashboardPage() {
     const [dateFrom, setDateFrom] = useState<string>('');
     const [dateTo, setDateTo] = useState<string>('');
 
+    // Derived Data. Kept above the access guard because a hook skipped by an
+    // early return changes the hook count between renders and crashes React.
+    const filteredProposals = useMemo(() => {
+        return MOCK_PROPOSALS.filter(p => {
+            if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
+            if (dateFrom && new Date(p.dateSubmitted) < new Date(dateFrom)) return false;
+            if (dateTo && new Date(p.dateSubmitted) > new Date(`${dateTo}T23:59:59`)) return false;
+            return true;
+        });
+    }, [selectedDealer, dateFrom, dateTo]);
+
     if (!user || user.role !== 'SuperAdmin') {
         return (
             <div className="flex h-[60vh] items-center justify-center">
-                <div className="text-slate-500">Access Restricted. Super Admins only.</div>
+                <div className="text-slate-500">Akses terbatas. Khusus Super Admin.</div>
             </div>
         );
     }
@@ -47,16 +85,6 @@ export default function SuperAdminDashboardPage() {
         setDateFrom('');
         setDateTo('');
     };
-
-    // Derived Data
-    const filteredProposals = useMemo(() => {
-        return MOCK_PROPOSALS.filter(p => {
-            if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
-            if (dateFrom && new Date(p.dateSubmitted) < new Date(dateFrom)) return false;
-            if (dateTo && new Date(p.dateSubmitted) > new Date(`${dateTo}T23:59:59`)) return false;
-            return true;
-        });
-    }, [selectedDealer, dateFrom, dateTo]);
 
     // Enterprise KPI Calculations
     const enterpriseTotalBudget = MOCK_GL_ACCOUNTS.reduce((sum, acc) => sum + acc.totalBudget, 0);
@@ -121,35 +149,12 @@ export default function SuperAdminDashboardPage() {
 
     // 5. Status Breakdown (for mini donut)
     const statusData = [
-        { name: 'Approved', value: approvedCount, color: '#10b981' },
-        { name: 'Pending', value: pendingCount, color: '#f59e0b' },
-        { name: 'Rejected', value: rejectedCount, color: '#ef4444' },
+        { name: 'Disetujui', value: approvedCount, color: STATUS_COLOR.approved },
+        { name: 'Menunggu', value: pendingCount, color: STATUS_COLOR.pending },
+        { name: 'Ditolak', value: rejectedCount, color: STATUS_COLOR.rejected },
     ].filter(d => d.value > 0);
 
-    const CustomTooltip = ({ active, payload, label }: any) => {
-        if (active && payload && payload.length) {
-            return (
-                <div className="bg-white border border-slate-200 p-3 shadow-md rounded-lg text-sm z-50">
-                    {label && <p className="font-semibold text-slate-800 mb-1">{label}</p>}
-                    {!label && payload[0].name && <p className="font-semibold text-slate-800 mb-1">{payload[0].name}</p>}
-                    <p className="text-slate-600">{formatCurrency(payload[0].value)}</p>
-                </div>
-            );
-        }
-        return null;
-    };
 
-    const CountTooltip = ({ active, payload }: any) => {
-        if (active && payload && payload.length) {
-            return (
-                <div className="bg-white border border-slate-200 p-3 shadow-md rounded-lg text-sm z-50">
-                    <p className="font-semibold text-slate-800 mb-1">{payload[0].name}</p>
-                    <p className="text-slate-600">{payload[0].value} proposal(s)</p>
-                </div>
-            );
-        }
-        return null;
-    };
 
     const yAxisFormatter = (val: number) => {
         if (val >= 1000000000) return `Rp${(val / 1000000000).toFixed(1)}B`;
@@ -159,49 +164,50 @@ export default function SuperAdminDashboardPage() {
 
     return (
         <div className="space-y-8 max-w-7xl mx-auto pb-10">
-            {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                        <Globe className="h-8 w-8 text-blue-600" />
-                        Enterprise Dashboard
-                    </h2>
-                    <p className="text-slate-500 mt-1">Bird's-eye view of all budget activity across the organization.</p>
-                </div>
-                <Button onClick={handleDownload} disabled={isDownloading} className="self-start sm:self-auto bg-slate-900 hover:bg-slate-800">
-                    <DownloadCloud className="mr-2 h-4 w-4" />
-                    {isDownloading ? 'Downloading...' : 'Export Report (PDF)'}
-                </Button>
-            </div>
+            <PageHeading
+                title={
+                    <span className="flex items-center gap-2.5">
+                        <Globe className="h-8 w-8 text-astra-600" />
+                        Dashboard Enterprise
+                    </span>
+                }
+                description="Pandangan menyeluruh atas seluruh aktivitas budget organisasi."
+                action={
+                    <Button onClick={handleDownload} disabled={isDownloading}>
+                        <DownloadCloud className="mr-2 h-4 w-4" />
+                        {isDownloading ? 'Menyiapkan…' : 'Ekspor Laporan (PDF)'}
+                    </Button>
+                }
+            />
 
             {/* Global Filters */}
-            <Card className="bg-slate-50 border-slate-200">
+            <Card className="border-slate-200 bg-slate-50/80">
                 <CardContent className="p-4">
                     <div className="flex flex-col md:flex-row gap-4 items-end">
                         <div className="flex-1 space-y-2">
-                            <label className="text-sm font-medium text-slate-700">Dealer Branch</label>
+                            <label className="text-sm font-medium text-slate-700">Cabang Dealer</label>
                             <Select
                                 value={selectedDealer}
                                 onChange={(e) => setSelectedDealer(e.target.value)}
                                 className="w-full bg-white"
                                 options={[
-                                    { label: "All Dealers (Enterprise)", value: "All" },
+                                    { label: "Semua Dealer (Enterprise)", value: "All" },
                                     ...MOCK_DEALERS.map(dealer => ({ label: dealer, value: dealer }))
                                 ]}
                             />
                         </div>
                         <div className="flex-1 space-y-2">
-                            <label className="text-sm font-medium text-slate-700">Date From</label>
+                            <label className="text-sm font-medium text-slate-700">Dari Tanggal</label>
                             <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full bg-white" />
                         </div>
                         <div className="flex-1 space-y-2">
-                            <label className="text-sm font-medium text-slate-700">Date To</label>
+                            <label className="text-sm font-medium text-slate-700">Sampai Tanggal</label>
                             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-full bg-white" />
                         </div>
                         <div className="flex-none">
                             <Button variant="outline" onClick={clearFilters} className="w-full md:w-auto h-[40px]">
                                 <FilterX className="h-4 w-4 mr-2" />
-                                Clear
+                                Reset
                             </Button>
                         </div>
                     </div>
@@ -209,146 +215,112 @@ export default function SuperAdminDashboardPage() {
             </Card>
 
             {/* KPI Cards Row 1: Financial */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card className="bg-slate-900 text-white border-none shadow-lg">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-400">Enterprise Budget</CardTitle>
-                        <DollarSign className="h-4 w-4 text-slate-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(totalBudget)}</div>
-                        <p className="text-xs text-slate-400 mt-1">{MOCK_GL_ACCOUNTS.length} G/L accounts active</p>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-blue-600 text-white border-none shadow-lg">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-blue-200">Budget Consumed</CardTitle>
-                        <TrendingUp className="h-4 w-4 text-blue-200" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(totalUsed)}</div>
-                        <p className="text-xs text-blue-200 mt-1">{utilizedPercentage}% utilization</p>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-emerald-600 text-white border-none shadow-lg">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-emerald-200">Remaining Budget</CardTitle>
-                        <Activity className="h-4 w-4 text-emerald-200" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{formatCurrency(totalRemaining)}</div>
-                        <p className="text-xs text-emerald-200 mt-1">Available capacity</p>
-                    </CardContent>
-                </Card>
-
-                <Card className="border-slate-200 shadow-lg">
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-500">Utilization</CardTitle>
-                        <Activity className="h-4 w-4 text-slate-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-slate-900">{utilizedPercentage}%</div>
-                        <div className="w-full bg-slate-100 rounded-full h-2.5 mt-2">
-                            <div
-                                className={`h-2.5 rounded-full transition-all ${Number(utilizedPercentage) > 80 ? 'bg-red-500' : Number(utilizedPercentage) > 60 ? 'bg-amber-500' : 'bg-blue-600'}`}
-                                style={{ width: `${Math.min(100, Number(utilizedPercentage))}%` }}
-                            ></div>
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    label="Budget Enterprise"
+                    value={formatCurrency(totalBudget)}
+                    hint={`${MOCK_GL_ACCOUNTS.length} G/L account aktif`}
+                    icon={Wallet}
+                    accent="ink"
+                />
+                <StatCard
+                    label="Budget Terpakai"
+                    value={formatCurrency(totalUsed)}
+                    hint={`${utilizedPercentage}% utilisasi`}
+                    icon={TrendingUp}
+                    accent="astra"
+                />
+                <StatCard
+                    label="Sisa Budget"
+                    value={formatCurrency(totalRemaining)}
+                    hint="Kapasitas yang masih tersedia"
+                    icon={Sprout}
+                    accent="padi"
+                />
+                <StatCard
+                    label="Utilisasi"
+                    value={`${utilizedPercentage}%`}
+                    icon={Activity}
+                    accent={Number(utilizedPercentage) > 90 ? 'honda' : 'bulir'}
+                >
+                    <UtilizationBar percent={Number(utilizedPercentage)} />
+                </StatCard>
             </div>
 
             {/* KPI Cards Row 2: Operational */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-500">Total Proposals</CardTitle>
-                        <FileCheck className="h-4 w-4 text-slate-400" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-slate-900">{totalProposals}</div>
-                        <p className="text-xs text-slate-500 mt-1">In current filter scope</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-500">Approved</CardTitle>
-                        <FileCheck className="h-4 w-4 text-emerald-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-emerald-600">{approvedCount}</div>
-                        <p className="text-xs text-slate-500 mt-1">{totalProposals > 0 ? ((approvedCount / totalProposals) * 100).toFixed(0) : 0}% approval rate</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-500">Pending Review</CardTitle>
-                        <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-amber-600">{pendingCount}</div>
-                        <p className="text-xs text-slate-500 mt-1">Awaiting approval chain</p>
-                    </CardContent>
-                </Card>
-
-                <Card>
-                    <CardHeader className="flex flex-row items-center justify-between pb-2">
-                        <CardTitle className="text-sm font-medium text-slate-500">Rejected</CardTitle>
-                        <AlertTriangle className="h-4 w-4 text-red-500" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-red-600">{rejectedCount}</div>
-                        <p className="text-xs text-slate-500 mt-1">{totalProposals > 0 ? ((rejectedCount / totalProposals) * 100).toFixed(0) : 0}% rejection rate</p>
-                    </CardContent>
-                </Card>
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+                <StatCard
+                    label="Total Proposal"
+                    value={totalProposals}
+                    hint="Dalam cakupan filter saat ini"
+                    icon={FileCheck}
+                    accent="astra"
+                />
+                <StatCard
+                    label="Disetujui"
+                    value={approvedCount}
+                    hint={`${totalProposals > 0 ? ((approvedCount / totalProposals) * 100).toFixed(0) : 0}% tingkat persetujuan`}
+                    icon={Sprout}
+                    accent="padi"
+                />
+                <StatCard
+                    label="Menunggu Review"
+                    value={pendingCount}
+                    hint="Masih dalam rantai persetujuan"
+                    icon={AlertTriangle}
+                    accent="bulir"
+                />
+                <StatCard
+                    label="Ditolak"
+                    value={rejectedCount}
+                    hint={`${totalProposals > 0 ? ((rejectedCount / totalProposals) * 100).toFixed(0) : 0}% tingkat penolakan`}
+                    icon={XCircle}
+                    accent="honda"
+                />
             </div>
 
             {/* Charts Row 1: Monthly Trends & Yearly */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="col-span-1 lg:col-span-2">
                     <CardHeader>
-                        <CardTitle>Monthly Submission Trends</CardTitle>
-                        <CardDescription>Enterprise-wide timeline of budget proposals.</CardDescription>
+                        <CardTitle>Tren Pengajuan Bulanan</CardTitle>
+                        <CardDescription>Linimasa proposal budget seluruh organisasi.</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
                         {monthlyData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <LineChart data={monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={yAxisFormatter} />
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_ACCENT.grid} />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: CHART_ACCENT.axis, fontSize: 12 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: CHART_ACCENT.axis, fontSize: 12 }} tickFormatter={yAxisFormatter} />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f1f5f9', stroke: '#cbd5e1', strokeWidth: 1, strokeDasharray: '3 3' }} />
-                                    <Line type="monotone" dataKey="Amount" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                                    <Line type="monotone" dataKey="Amount" stroke={CHART_ACCENT.astra} strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
                                 </LineChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400">No data for selected filters.</div>
+                            <div className="h-full flex items-center justify-center text-slate-400">Belum ada data untuk filter ini.</div>
                         )}
                     </CardContent>
                 </Card>
 
                 <Card className="col-span-1">
                     <CardHeader>
-                        <CardTitle>Yearly Comparison</CardTitle>
-                        <CardDescription>Year-over-year spending comparison.</CardDescription>
+                        <CardTitle>Perbandingan Tahunan</CardTitle>
+                        <CardDescription>Perbandingan belanja antar tahun.</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
                         {yearlyData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={yearlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
-                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={yAxisFormatter} />
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_ACCENT.grid} />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: CHART_ACCENT.axis, fontSize: 12 }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fill: CHART_ACCENT.axis, fontSize: 12 }} tickFormatter={yAxisFormatter} />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f1f5f9' }} />
-                                    <Bar dataKey="Amount" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={40} />
+                                    <Bar dataKey="Amount" fill={CHART_ACCENT.padi} radius={[4, 4, 0, 0]} barSize={40} />
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400">No data for selected filters.</div>
+                            <div className="h-full flex items-center justify-center text-slate-400">Belum ada data untuk filter ini.</div>
                         )}
                     </CardContent>
                 </Card>
@@ -358,30 +330,30 @@ export default function SuperAdminDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="col-span-1 lg:col-span-2">
                     <CardHeader>
-                        <CardTitle>Top Spending Categories</CardTitle>
-                        <CardDescription>G/L account expenditure ranked highest to lowest.</CardDescription>
+                        <CardTitle>Kategori Belanja Tertinggi</CardTitle>
+                        <CardDescription>Belanja per G/L account, terbesar ke terkecil.</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
                         {spendingData.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={spendingData} layout="vertical" margin={{ top: 20, right: 30, left: 100, bottom: 5 }}>
-                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
-                                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={yAxisFormatter} />
-                                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 11, width: 140 }} />
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={CHART_ACCENT.grid} />
+                                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: CHART_ACCENT.axis, fontSize: 12 }} tickFormatter={yAxisFormatter} />
+                                    <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: CHART_ACCENT.axis, fontSize: 11, width: 140 }} />
                                     <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f1f5f9' }} />
-                                    <Bar dataKey="Amount" fill="#0f172a" radius={[0, 4, 4, 0]} barSize={20} />
+                                    <Bar dataKey="Amount" fill={CHART_ACCENT.astra} radius={[0, 4, 4, 0]} barSize={20} />
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400">No data for selected filters.</div>
+                            <div className="h-full flex items-center justify-center text-slate-400">Belum ada data untuk filter ini.</div>
                         )}
                     </CardContent>
                 </Card>
 
                 <Card className="col-span-1">
                     <CardHeader>
-                        <CardTitle>Dealer Distribution</CardTitle>
-                        <CardDescription>Budget usage per dealer branch.</CardDescription>
+                        <CardTitle>Distribusi Dealer</CardTitle>
+                        <CardDescription>Penggunaan budget per cabang dealer.</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[350px]">
                         {dealerData.length > 0 ? (
@@ -398,7 +370,7 @@ export default function SuperAdminDashboardPage() {
                                         stroke="none"
                                     >
                                         {dealerData.map((_entry, index) => (
-                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                            <Cell key={`cell-${index}`} fill={CHART_SERIES[index % CHART_SERIES.length]} />
                                         ))}
                                     </Pie>
                                     <Tooltip content={<CustomTooltip />} />
@@ -411,7 +383,7 @@ export default function SuperAdminDashboardPage() {
                                 </RechartsPieChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400">No data for selected filters.</div>
+                            <div className="h-full flex items-center justify-center text-slate-400">Belum ada data untuk filter ini.</div>
                         )}
                     </CardContent>
                 </Card>
@@ -421,8 +393,8 @@ export default function SuperAdminDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <Card className="col-span-1">
                     <CardHeader>
-                        <CardTitle>Proposal Status</CardTitle>
-                        <CardDescription>Approval pipeline overview.</CardDescription>
+                        <CardTitle>Status Proposal</CardTitle>
+                        <CardDescription>Ringkasan alur persetujuan.</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[280px]">
                         {statusData.length > 0 ? (
@@ -451,15 +423,15 @@ export default function SuperAdminDashboardPage() {
                                 </RechartsPieChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="h-full flex items-center justify-center text-slate-400">No proposals.</div>
+                            <div className="h-full flex items-center justify-center text-slate-400">Belum ada proposal.</div>
                         )}
                     </CardContent>
                 </Card>
 
                 <Card className="col-span-1 lg:col-span-2">
                     <CardHeader>
-                        <CardTitle>Budget Health by G/L Account</CardTitle>
-                        <CardDescription>Top accounts by remaining budget capacity.</CardDescription>
+                        <CardTitle>Kesehatan Budget per G/L Account</CardTitle>
+                        <CardDescription>Akun dengan sisa kapasitas budget paling menipis.</CardDescription>
                     </CardHeader>
                     <CardContent className="h-[280px] overflow-y-auto">
                         <div className="space-y-3">
@@ -478,7 +450,7 @@ export default function SuperAdminDashboardPage() {
                                                 </div>
                                                 <div className="w-full bg-slate-100 rounded-full h-1.5">
                                                     <div
-                                                        className={`h-1.5 rounded-full ${utilization > 90 ? 'bg-red-500' : utilization > 75 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                                                        className={`h-1.5 rounded-full ${utilization > 90 ? 'bg-honda-600' : utilization > 75 ? 'bg-bulir-400' : 'bg-padi-500'}`}
                                                         style={{ width: `${Math.min(100, utilization)}%` }}
                                                     ></div>
                                                 </div>

@@ -9,6 +9,7 @@ import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { DownloadCloud, Check, X, Clock } from 'lucide-react';
+import { PageHeading } from '@/components/ui/stat-card';
 import { cn, formatCurrency } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, doc, updateDoc, arrayUnion } from 'firebase/firestore';
@@ -17,8 +18,6 @@ export default function ApprovalsPage() {
     const { user } = useAuth();
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(true);
-
-    if (!user) return null;
     const [activeTab, setActiveTab] = useState<'action' | 'history' | 'all'>('action');
 
     // Modal state
@@ -52,6 +51,10 @@ export default function ApprovalsPage() {
 
         return () => unsubscribe();
     }, []);
+
+    // Guards come after every hook: an early return above one of them would
+    // change the hook count between renders and crash React.
+    if (!user) return null;
 
     // SuperAdmins use different page
     if (user.role === 'SuperAdmin') {
@@ -95,8 +98,8 @@ export default function ApprovalsPage() {
 
     const getStatusBadge = (status: string) => {
         switch (status) {
-            case 'Approved': return <Badge variant="success">Approved</Badge>;
-            case 'Rejected': return <Badge variant="destructive">Rejected</Badge>;
+            case 'Approved': return <Badge variant="success">Disetujui</Badge>;
+            case 'Rejected': return <Badge variant="destructive">Ditolak</Badge>;
             default: return <Badge variant="warning">{status}</Badge>;
         }
     };
@@ -168,36 +171,36 @@ export default function ApprovalsPage() {
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                    <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-                        {isAppraisalRole ? 'Budget Approvals' : 'My Requests Tracking'}
-                    </h2>
-                    <p className="text-slate-500 mt-1">
-                        {isAppraisalRole ? 'Review and action pending budget proposals.' : 'Monitor the progress of your submitted budget proposals.'}
-                    </p>
-                </div>
-                <Button onClick={handleDownload} disabled={isDownloading} variant="outline" className="self-start sm:self-auto bg-white">
-                    <DownloadCloud className="mr-2 h-4 w-4" />
-                    {isDownloading ? 'Preparing...' : 'Export List'}
-                </Button>
-            </div>
+            <PageHeading
+                title={isAppraisalRole ? 'Persetujuan Budget' : 'Pelacakan Pengajuan Saya'}
+                description={
+                    isAppraisalRole
+                        ? 'Tinjau dan tindak lanjuti proposal budget yang menunggu keputusan Anda.'
+                        : 'Pantau perkembangan proposal budget yang Anda ajukan.'
+                }
+                action={
+                    <Button onClick={handleDownload} disabled={isDownloading} variant="outline" className="bg-white">
+                        <DownloadCloud className="mr-2 h-4 w-4" />
+                        {isDownloading ? 'Menyiapkan…' : 'Ekspor Daftar'}
+                    </Button>
+                }
+            />
 
             {/* Tabs for Appraisal Roles */}
             {user.role !== 'User' && (
-                <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg w-fit">
+                <div className="flex w-fit space-x-1 rounded-lg bg-slate-100 p-1">
                     <button
                         onClick={() => setActiveTab('action')}
                         className={cn(
-                            "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                            "rounded-md px-4 py-2 text-sm font-medium transition-[background-color,color,box-shadow] duration-150",
                             activeTab === 'action'
                                 ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5"
-                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                                : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
                         )}
                     >
-                        Action Required
+                        Perlu Tindakan
                         {actionRequiredProposals.length > 0 && (
-                            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700">
+                            <span className="ml-2 inline-flex items-center justify-center rounded-full bg-honda-100 px-2 py-0.5 text-xs font-bold text-honda-700">
                                 {actionRequiredProposals.length}
                             </span>
                         )}
@@ -205,13 +208,13 @@ export default function ApprovalsPage() {
                     <button
                         onClick={() => setActiveTab('history')}
                         className={cn(
-                            "px-4 py-2 text-sm font-medium rounded-md transition-all",
+                            "rounded-md px-4 py-2 text-sm font-medium transition-[background-color,color,box-shadow] duration-150",
                             activeTab === 'history'
                                 ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-900/5"
-                                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                                : "text-slate-600 hover:bg-slate-200/50 hover:text-slate-900"
                         )}
                     >
-                        History
+                        Riwayat
                     </button>
                 </div>
             )}
@@ -221,11 +224,11 @@ export default function ApprovalsPage() {
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead className="w-[300px]">Proposal Info</TableHead>
-                            <TableHead>Amount & G/L</TableHead>
-                            <TableHead className="w-[400px]">Status Timeline</TableHead>
+                            <TableHead className="w-[300px]">Informasi Proposal</TableHead>
+                            <TableHead>Nilai & G/L</TableHead>
+                            <TableHead className="w-[400px]">Alur Persetujuan</TableHead>
                             {activeTab === 'action' && user.role !== 'User' && (
-                                <TableHead className="text-right">Actions</TableHead>
+                                <TableHead className="text-right">Tindakan</TableHead>
                             )}
                         </TableRow>
                     </TableHeader>
@@ -234,8 +237,8 @@ export default function ApprovalsPage() {
                             <TableRow>
                                 <TableCell colSpan={4} className="h-32 text-center text-slate-500">
                                     <div className="flex items-center justify-center">
-                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                                        <span className="ml-2 text-slate-500">Loading proposals...</span>
+                                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-astra-600" />
+                                        <span className="ml-3 text-slate-500">Memuat proposal…</span>
                                     </div>
                                 </TableCell>
                             </TableRow>
@@ -243,8 +246,8 @@ export default function ApprovalsPage() {
                             <TableRow>
                                 <TableCell colSpan={4} className="h-32 text-center text-slate-500">
                                     <div className="flex flex-col items-center justify-center">
-                                        <Check className="h-8 w-8 text-slate-300 mb-2" />
-                                        <p>All caught up! No proposals found.</p>
+                                        <Check className="mb-2 h-8 w-8 text-padi-300" />
+                                        <p>Semua sudah tertangani. Tidak ada proposal di sini.</p>
                                     </div>
                                 </TableCell>
                             </TableRow>
@@ -267,7 +270,7 @@ export default function ApprovalsPage() {
                                     </TableCell>
                                     <TableCell>
                                         <div className="flex flex-col gap-1">
-                                            <span className="font-bold text-slate-900">
+                                            <span className="font-bold tabular-nums text-slate-900">
                                                 {formatCurrency(proposal.amount)}
                                             </span>
                                             <span className="text-xs font-mono text-slate-500">
@@ -285,8 +288,8 @@ export default function ApprovalsPage() {
                                         </div>
                                         {/* Latest Comment (if rejected and looking at history) */}
                                         {proposal.status === 'Rejected' && activeTab === 'history' && proposal.history.find(h => h.action === 'Rejected') && (
-                                            <div className="mt-2 text-xs italic text-red-600 bg-red-50 p-2 rounded border border-red-100">
-                                                "{proposal.history.find(h => h.action === 'Rejected')?.comment}"
+                                            <div className="mt-2 rounded border border-honda-100 bg-honda-50 p-2 text-xs italic text-honda-700">
+                                                &ldquo;{proposal.history.find(h => h.action === 'Rejected')?.comment}&rdquo;
                                             </div>
                                         )}
                                     </TableCell>
@@ -297,22 +300,22 @@ export default function ApprovalsPage() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-50"
+                                                    className="border-honda-200 text-honda-600 hover:bg-honda-50 hover:text-honda-700 disabled:opacity-50"
                                                     disabled={isUpdating}
                                                     onClick={() => {
                                                         setSelectedProposal(proposal);
                                                         setIsRejectModalOpen(true);
                                                     }}
                                                 >
-                                                    <X className="mr-1 h-4 w-4" /> Reject
+                                                    <X className="mr-1 h-4 w-4" /> Tolak
                                                 </Button>
                                                 <Button
                                                     size="sm"
-                                                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50"
+                                                    className="bg-padi-600 hover:bg-padi-700 disabled:opacity-50"
                                                     disabled={isUpdating}
                                                     onClick={() => handleApprove(proposal)}
                                                 >
-                                                    <Check className="mr-1 h-4 w-4" /> Approve
+                                                    <Check className="mr-1 h-4 w-4" /> Setujui
                                                 </Button>
                                             </div>
                                         </TableCell>
@@ -328,31 +331,31 @@ export default function ApprovalsPage() {
             <Modal
                 isOpen={isRejectModalOpen}
                 onClose={() => setIsRejectModalOpen(false)}
-                title="Reject Proposal"
+                title="Tolak Proposal"
             >
                 <div className="space-y-4">
                     <p className="text-sm text-slate-600">
-                        You are rejecting <strong className="text-slate-900">{selectedProposal?.title}</strong> for {selectedProposal ? formatCurrency(selectedProposal.amount) : ''}.
-                        Please provide a reason.
+                        Anda akan menolak <strong className="text-slate-900">{selectedProposal?.title}</strong> senilai {selectedProposal ? formatCurrency(selectedProposal.amount) : ''}.
+                        Mohon sertakan alasannya.
                     </p>
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-slate-900">Rejection Reason <span className="text-red-500">*</span></label>
+                        <label className="text-sm font-medium text-slate-900">Alasan Penolakan <span className="text-honda-600">*</span></label>
                         <textarea
                             required
                             value={rejectComment}
                             onChange={(e) => setRejectComment(e.target.value)}
-                            className="w-full flex min-h-[100px] rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500 focus-visible:border-red-500"
-                            placeholder="E.g., Missing justifications, budget exceeded, etc."
+                            className="w-full flex min-h-[100px] rounded-md border border-slate-300 bg-transparent px-3 py-2 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-honda-500/40 focus-visible:border-honda-500"
+                            placeholder="Contoh: justifikasi kurang lengkap, melebihi pagu budget, dll."
                         />
                     </div>
                     <div className="flex justify-end gap-3 pt-4 border-t border-slate-100 mt-4">
-                        <Button variant="ghost" onClick={() => setIsRejectModalOpen(false)} disabled={isUpdating}>Cancel</Button>
+                        <Button variant="ghost" onClick={() => setIsRejectModalOpen(false)} disabled={isUpdating}>Batal</Button>
                         <Button
                             variant="destructive"
                             onClick={handleReject}
                             disabled={rejectComment.trim().length === 0 || isUpdating}
                         >
-                            {isUpdating ? 'Submitting...' : 'Submit Rejection'}
+                            {isUpdating ? 'Mengirim…' : 'Kirim Penolakan'}
                         </Button>
                     </div>
                 </div>

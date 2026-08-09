@@ -42,23 +42,37 @@ export interface ItemizedCost {
     m1?: string;
 }
 
+export type BudgetSource = 'GL Account' | 'Added Fee' | 'Retail JoinProm';
+
+/** The label shown in the form, keyed by the value that gets persisted. */
+export const BUDGET_SOURCE_LABEL: Record<BudgetSource, string> = {
+    'GL Account': 'GL Account',
+    'Added Fee': 'Added Fee (Biaya Titipan C6)',
+    'Retail JoinProm': 'Retail JoinProm',
+};
+
 export interface Proposal {
     id: string;
+    /** Human-facing reference, e.g. P20260042. Distinct from the Firestore id. */
+    trackingId?: string;
     title: string;
     subtitle?: string;
     background?: string;
-    budgetSource?: 'GL Account' | 'Added Fee' | 'Retail JoinProm';
+    budgetSource?: BudgetSource;
     items?: ItemizedCost[];
     type: ProposalType;
     amount: number;
     glAccountCode: string;
     description: string;
     submitterId: string;
+    submitterName?: string;
+    submitterDepartment?: string;
     dealer: Dealer;
     status: ProposalStatus;
     dateSubmitted: string;
     lastUpdated: string;
     history: ProposalHistory[];
+    attachmentUrl?: string | null;
     skipRegionHeadApproval?: boolean;
 }
 
