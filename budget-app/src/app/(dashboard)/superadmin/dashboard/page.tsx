@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { useAuth } from '@/context/auth-context';
-import { MOCK_GL_ACCOUNTS, MOCK_PROPOSALS, MOCK_DEALERS } from '@/lib/mock-data';
+import { MOCK_GL_ACCOUNTS, MOCK_DEALERS } from '@/lib/mock-data';
+import { useProposals } from '@/hooks/use-proposals';
+import { useToast } from '@/components/ui/toast';
 import {
     BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
     ResponsiveContainer, PieChart as RechartsPieChart, Pie, Cell
@@ -48,6 +50,10 @@ function CountTooltip({ active, payload }: TooltipProps) {
 
 export default function SuperAdminDashboardPage() {
     const { user } = useAuth();
+    const { notify } = useToast();
+    // Live records, the same set the approvers and the submitter see. The page
+    // used to chart MOCK_PROPOSALS while every other screen read Firestore.
+    const { proposals, loading, isSample, error } = useProposals();
     const [isDownloading, setIsDownloading] = useState(false);
 
     // Filters State
@@ -58,13 +64,13 @@ export default function SuperAdminDashboardPage() {
     // Derived Data. Kept above the access guard because a hook skipped by an
     // early return changes the hook count between renders and crashes React.
     const filteredProposals = useMemo(() => {
-        return MOCK_PROPOSALS.filter(p => {
+        return proposals.filter(p => {
             if (selectedDealer !== 'All' && p.dealer !== selectedDealer) return false;
             if (dateFrom && new Date(p.dateSubmitted) < new Date(dateFrom)) return false;
             if (dateTo && new Date(p.dateSubmitted) > new Date(`${dateTo}T23:59:59`)) return false;
             return true;
         });
-    }, [selectedDealer, dateFrom, dateTo]);
+    }, [proposals, selectedDealer, dateFrom, dateTo]);
 
     if (!user || user.role !== 'SuperAdmin') {
         return (
@@ -76,7 +82,11 @@ export default function SuperAdminDashboardPage() {
 
     const handleDownload = () => {
         setIsDownloading(true);
-        alert("Downloading Enterprise Budget Summary...");
+        notify({
+            title: 'Menyiapkan laporan',
+            description: 'Ringkasan budget enterprise sedang disusun.',
+            variant: 'info',
+        });
         setTimeout(() => setIsDownloading(false), 2000);
     };
 
@@ -180,6 +190,14 @@ export default function SuperAdminDashboardPage() {
                 }
             />
 
+            {(isSample || error) && (
+                <div className="rounded-xl border border-bulir-200 bg-bulir-50 px-4 py-3 text-sm text-bulir-800">
+                    {error
+                        ? `Firestore menolak permintaan: ${error}`
+                        : 'Firebase belum dikonfigurasi — menampilkan data proposal contoh.'}
+                </div>
+            )}
+
             {/* Global Filters */}
             <Card className="border-slate-200 bg-slate-50/80">
                 <CardContent className="p-4">
@@ -251,7 +269,7 @@ export default function SuperAdminDashboardPage() {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     label="Total Proposal"
-                    value={totalProposals}
+                    value={loading ? '…' : totalProposals}
                     hint="Dalam cakupan filter saat ini"
                     icon={FileCheck}
                     accent="astra"

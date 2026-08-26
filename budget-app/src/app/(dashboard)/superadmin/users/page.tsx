@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
-import { ShieldAlert, UserCog, UserPlus, KeyRound } from 'lucide-react';
+import { ShieldAlert, UserCog, UserPlus, KeyRound, Trash2, AlertTriangle } from 'lucide-react';
+import { useToast } from '@/components/ui/toast';
 
 const ALL_ROLES: Role[] = ['User', 'Supervisor', 'SubDeptHead', 'FinanceHead', 'RegionHead', 'SuperAdmin'];
 const ALL_DEALERS: Dealer[] = [
@@ -26,6 +27,7 @@ const ALL_DEALERS: Dealer[] = [
 
 export default function UserManagementPage() {
     const { user: currentUser } = useAuth();
+    const { notify } = useToast();
     const [users, setUsers] = useState<User[]>([]);
     const [loading, setLoading] = useState(true);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -33,6 +35,9 @@ export default function UserManagementPage() {
     // Modal States
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [resetUser, setResetUser] = useState<User | null>(null);
+    const [deleteUser, setDeleteUser] = useState<User | null>(null);
+    /** Typing the email back is the confirmation for an irreversible delete. */
+    const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
     // Add User Form State
     const [newEmail, setNewEmail] = useState('');
@@ -74,9 +79,18 @@ export default function UserManagementPage() {
 
             await updateDoc(userRef, updates);
             setUsers(users.map(u => u.id === userId ? { ...u, ...updates } : u));
+            notify({
+                title: field === 'role' ? 'Peran diperbarui' : 'Cabang diperbarui',
+                description: `${users.find(u => u.id === userId)?.name ?? 'Pengguna'} kini ${field === 'role' ? `berperan sebagai ${value}` : `ditempatkan di ${value || 'tanpa cabang'}`}.`,
+                variant: 'success',
+            });
         } catch (error) {
             console.error("Error updating user:", error);
-            alert("Failed to update user.");
+            notify({
+                title: 'Gagal memperbarui pengguna',
+                description: 'Perubahan tidak tersimpan. Periksa koneksi lalu coba lagi.',
+                variant: 'error',
+            });
         } finally {
             setUpdatingId(null);
         }
@@ -105,12 +119,20 @@ export default function UserManagementPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
 
-            alert("User created successfully with default password 'NTBRegina2.0'");
+            notify({
+                title: 'Pengguna berhasil dibuat',
+                description: `${newName || newEmail} dibuat dengan kata sandi awal 'NTBRegina2.0'.`,
+                variant: 'success',
+            });
             setIsAddModalOpen(false);
             setNewEmail(''); setNewName(''); setNewRole('User'); setNewDealer('');
             fetchUsers();
         } catch (err: any) {
-            alert("Error: " + err.message);
+            notify({
+                title: 'Gagal membuat pengguna',
+                description: err.message,
+                variant: 'error',
+            });
         } finally {
             setUpdatingId(null);
         }
@@ -135,10 +157,57 @@ export default function UserManagementPage() {
             const data = await res.json();
             if (!res.ok) throw new Error(data.error);
 
-            alert(`Password for ${resetUser.email} has been reset to 'NTBRegina2.0'`);
+            notify({
+                title: 'Kata sandi disetel ulang',
+                description: `Kata sandi ${resetUser.email} kini 'NTBRegina2.0'.`,
+                variant: 'success',
+            });
             setResetUser(null);
         } catch (err: any) {
-            alert("Error: " + err.message);
+            notify({
+                title: 'Gagal menyetel ulang kata sandi',
+                description: err.message,
+                variant: 'error',
+            });
+        } finally {
+            setUpdatingId(null);
+        }
+    };
+
+    const handleDeleteUser = async () => {
+        if (!deleteUser || !auth?.currentUser) return;
+        setUpdatingId(deleteUser.id);
+
+        try {
+            const idToken = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uid: deleteUser.id,
+                    requesterIdToken: idToken
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error);
+
+            // Drop the row locally rather than refetching: the directory is a
+            // single read and the user is already gone from the server.
+            setUsers(prev => prev.filter(u => u.id !== deleteUser.id));
+            notify({
+                title: 'Pengguna dihapus',
+                description: `${deleteUser.name} (${deleteUser.email}) tidak lagi memiliki akses ke sistem.`,
+                variant: 'success',
+            });
+            setDeleteUser(null);
+            setDeleteConfirmation('');
+        } catch (err: unknown) {
+            notify({
+                title: 'Gagal menghapus pengguna',
+                description: err instanceof Error ? err.message : 'Terjadi kesalahan tak terduga.',
+                variant: 'error',
+            });
         } finally {
             setUpdatingId(null);
         }
@@ -169,7 +238,7 @@ export default function UserManagementPage() {
                         User Role Management
                     </h1>
                     <p className="text-slate-500">
-                        Assign roles, default passwords, and operational branches to enterprise users.
+                        Assign roles, default passwords, and operational branches — and remove users who are no longer active.
                     </p>
                 </div>
                 <Button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
@@ -256,15 +325,29 @@ export default function UserManagementPage() {
                                                     )}
 
                                                     {u.id !== currentUser.id && (
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="text-slate-500 hover:text-amber-600 hover:bg-amber-50"
-                                                            onClick={() => setResetUser(u)}
-                                                            title="Reset Password"
-                                                        >
-                                                            <KeyRound className="h-4 w-4" />
-                                                        </Button>
+                                                        <>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-slate-500 hover:text-amber-600 hover:bg-amber-50"
+                                                                onClick={() => setResetUser(u)}
+                                                                title="Reset Password"
+                                                            >
+                                                                <KeyRound className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="text-slate-500 hover:text-honda-600 hover:bg-honda-50"
+                                                                onClick={() => {
+                                                                    setDeleteUser(u);
+                                                                    setDeleteConfirmation('');
+                                                                }}
+                                                                title="Hapus pengguna"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </>
                                                     )}
                                                 </div>
                                             </td>
@@ -329,6 +412,59 @@ export default function UserManagementPage() {
                         </Button>
                     </div>
                 </form>
+            </Modal>
+
+            {/* Delete User Modal */}
+            <Modal
+                isOpen={!!deleteUser}
+                onClose={() => { setDeleteUser(null); setDeleteConfirmation(''); }}
+                title="Hapus Pengguna"
+            >
+                <div className="space-y-4 text-sm text-slate-600">
+                    <div className="flex gap-3 rounded-lg border border-honda-100 bg-honda-50 p-3">
+                        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-honda-600" />
+                        <div className="space-y-1">
+                            <p className="font-semibold text-honda-700">Tindakan ini tidak dapat dibatalkan.</p>
+                            <p className="text-honda-700/90">
+                                Akun login dan profil <strong>{deleteUser?.name}</strong> akan dihapus permanen.
+                                Proposal yang pernah diajukan tetap tersimpan sebagai riwayat.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="block font-medium text-slate-700">
+                            Ketik <code className="rounded bg-slate-100 px-1 py-0.5 font-mono text-xs text-slate-800">{deleteUser?.email}</code> untuk mengonfirmasi
+                        </label>
+                        <Input
+                            value={deleteConfirmation}
+                            onChange={(e) => setDeleteConfirmation(e.target.value)}
+                            placeholder={deleteUser?.email}
+                            autoComplete="off"
+                        />
+                    </div>
+
+                    <div className="flex justify-end gap-3 mt-6">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => { setDeleteUser(null); setDeleteConfirmation(''); }}
+                        >
+                            Batal
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="destructive"
+                            onClick={handleDeleteUser}
+                            disabled={
+                                updatingId === deleteUser?.id ||
+                                deleteConfirmation.trim().toLowerCase() !== (deleteUser?.email ?? '').toLowerCase()
+                            }
+                        >
+                            {updatingId === deleteUser?.id ? 'Menghapus…' : 'Hapus Permanen'}
+                        </Button>
+                    </div>
+                </div>
             </Modal>
 
             {/* Reset Password Modal */}

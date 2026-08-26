@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -15,6 +15,10 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Proposal, ProposalType, ItemizedCost, BudgetSource, BUDGET_SOURCE_LABEL, Dealer } from '@/lib/types';
 import { PageHeading } from '@/components/ui/stat-card';
+import { useToast } from '@/components/ui/toast';
+import { useBudgetAllocations } from '@/hooks/use-budget-allocations';
+import { useProposals } from '@/hooks/use-proposals';
+import { budgetDocId, currentBudgetPeriod, usageFor } from '@/lib/budget';
 import * as XLSX from 'xlsx';
 
 /** Sources that draw against a known balance, so the form can warn on overspend. */
@@ -25,6 +29,7 @@ const DEFAULT_DEALER: Dealer = 'H531-SO BIMA';
 
 export default function SubmissionPage() {
     const { user } = useAuth();
+    const { notify } = useToast();
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -45,6 +50,45 @@ export default function SubmissionPage() {
     const [file, setFile] = useState<File | null>(null); // Main PDF/Docs
     const [excelFile, setExcelFile] = useState<File | null>(null); // For Added Fee
     const [excelError, setExcelError] = useState('');
+
+    // --- Budget ceilings set by the Super Admin ---------------------------
+    const period = currentBudgetPeriod();
+    const { allocations } = useBudgetAllocations(period);
+    const { proposals } = useProposals();
+
+    // Only this year's proposals draw against this year's pagu.
+    const periodProposals = useMemo(
+        () => proposals.filter(p => new Date(p.dateSubmitted).getFullYear() === Number(period)),
+        [proposals, period]
+    );
+
+    /** The pagu for the chosen G/L account, or null when none has been set. */
+    const glCeiling = useMemo(() => {
+        if (budgetSource !== 'GL Account' || !glAccount) return null;
+        const allocation = allocations[budgetDocId('GLAccount', glAccount, period)];
+        if (!allocation?.totalBudget) return null;
+        const usage = usageFor(periodProposals, p => p.glAccountCode === glAccount);
+        return {
+            total: allocation.totalBudget,
+            used: usage.committed,
+            remaining: allocation.totalBudget - usage.committed,
+        };
+    }, [budgetSource, glAccount, allocations, periodProposals, period]);
+
+    /** The pagu for the submitter's own sales office, if one has been set. */
+    const dealerCeiling = useMemo(() => {
+        const dealer = user?.dealer;
+        if (!dealer) return null;
+        const allocation = allocations[budgetDocId('Dealer', dealer, period)];
+        if (!allocation?.totalBudget) return null;
+        const usage = usageFor(periodProposals, p => p.dealer === dealer);
+        return {
+            dealer,
+            total: allocation.totalBudget,
+            used: usage.committed,
+            remaining: allocation.totalBudget - usage.committed,
+        };
+    }, [user?.dealer, allocations, periodProposals, period]);
 
     // --- Dynamic Table Logic (For GL Account) ---
     const handleItemChange = (index: number, field: keyof ItemizedCost, value: any) => {
@@ -78,6 +122,14 @@ export default function SubmissionPage() {
             setCurrentBalance('');
         }
     }, [budgetSource]);
+
+    // A centrally-set pagu is the authority on what is left, so the balance
+    // field stops being a number the submitter types from memory.
+    useEffect(() => {
+        if (glCeiling) {
+            setCurrentBalance(Math.max(0, glCeiling.remaining));
+        }
+    }, [glCeiling]);
 
     // Access restriction. It sits below every hook on purpose — an early
     // return above one changes the hook count between renders and crashes React.
@@ -159,22 +211,47 @@ export default function SubmissionPage() {
         // Validation based on type
         const requiresPDF = type === 'Perbaikan AC / mobil / motor / asset lain' || type === 'Sewa Gudang';
         if (requiresPDF && !file) {
-            alert("Tipe pengajuan ini wajib melampirkan dokumen/PDF pendukung.");
+            notify({
+                title: 'Dokumen pendukung belum dilampirkan',
+                description: 'Tipe pengajuan ini wajib melampirkan dokumen/PDF pendukung.',
+                variant: 'warning',
+            });
             return;
         }
 
         if (budgetSource === 'GL Account' && !glAccount) {
-            alert("Silakan pilih G/L Account terlebih dahulu.");
+            notify({
+                title: 'G/L Account belum dipilih',
+                description: 'Pilih G/L Account terlebih dahulu sebelum mengirim pengajuan.',
+                variant: 'warning',
+            });
             return;
         }
 
         if (amount <= 0) {
-            alert("Nilai pengajuan harus lebih besar dari 0.");
+            notify({
+                title: 'Nilai pengajuan belum diisi',
+                description: 'Total pengajuan harus lebih besar dari 0.',
+                variant: 'warning',
+            });
             return;
         }
 
         if (BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' && amount > currentBalance) {
-            alert("Nilai pengajuan melebihi saldo budget yang tersedia.");
+            notify({
+                title: 'Melebihi saldo budget',
+                description: 'Nilai pengajuan melebihi saldo budget yang tersedia.',
+                variant: 'error',
+            });
+            return;
+        }
+
+        if (dealerCeiling && amount > dealerCeiling.remaining) {
+            notify({
+                title: 'Melebihi pagu Sales Office',
+                description: `Sisa pagu ${dealerCeiling.dealer} tinggal ${formatCurrency(Math.max(0, dealerCeiling.remaining))}.`,
+                variant: 'error',
+            });
             return;
         }
 
@@ -235,6 +312,11 @@ export default function SubmissionPage() {
             }
 
             setIsSubmitted(true);
+            notify({
+                title: 'Proposal terkirim',
+                description: `${title} kini menunggu persetujuan Supervisor.`,
+                variant: 'success',
+            });
             setTimeout(() => {
                 setIsSubmitted(false);
                 // Reset form
@@ -245,13 +327,21 @@ export default function SubmissionPage() {
             }, 3000);
         } catch (error) {
             console.error("Error submitting proposal:", error);
-            alert("Gagal mengirim proposal. Pastikan koneksi dan konfigurasi Firebase sudah benar.");
+            notify({
+                title: 'Gagal mengirim proposal',
+                description: 'Pastikan koneksi dan konfigurasi Firebase sudah benar, lalu coba lagi.',
+                variant: 'error',
+            });
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const isExceeding = BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' && amount > currentBalance;
+    const exceedsBalance = BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' && amount > currentBalance;
+    const exceedsDealerPagu = !!dealerCeiling && amount > dealerCeiling.remaining;
+    // Either ceiling blocks the submission — the SO pagu applies regardless of
+    // which budget source the proposal draws on.
+    const isExceeding = exceedsBalance || exceedsDealerPagu;
     const remainingAfter = BALANCE_BACKED.includes(budgetSource) && typeof currentBalance === 'number' ? currentBalance - amount : null;
 
     return (
@@ -365,10 +455,47 @@ export default function SubmissionPage() {
                                                 step="1"
                                                 placeholder="Contoh: 15000000"
                                                 value={currentBalance}
+                                                readOnly={!!glCeiling}
+                                                className={glCeiling ? 'bg-slate-100 text-slate-600' : undefined}
                                                 onChange={(e) => setCurrentBalance(e.target.value ? Number(e.target.value) : '')}
                                             />
+                                            <p className="text-xs text-slate-500">
+                                                {glCeiling
+                                                    ? `Terisi otomatis dari pagu ${formatCurrency(glCeiling.total)} yang ditetapkan Super Admin, dikurangi ${formatCurrency(glCeiling.used)} yang sudah terpakai.`
+                                                    : 'Pagu G/L account ini belum ditetapkan Super Admin — isikan saldo terakhir secara manual.'}
+                                            </p>
                                         </div>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* The submitter's own SO ceiling applies whatever the
+                                budget source is, so it is shown outside the
+                                per-source panels. */}
+                            {dealerCeiling && (
+                                <div className="rounded-xl border border-slate-200 bg-white p-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="text-sm font-semibold text-slate-900">
+                                                Pagu {dealerCeiling.dealer} · {period}
+                                            </p>
+                                            <p className="text-xs text-slate-500">
+                                                Terpakai {formatCurrency(dealerCeiling.used)} dari {formatCurrency(dealerCeiling.total)}
+                                            </p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[11px] uppercase tracking-wide text-slate-400">Sisa pagu</p>
+                                            <p className={`text-lg font-bold tabular-nums ${dealerCeiling.remaining - amount < 0 ? 'text-honda-600' : 'text-slate-900'}`}>
+                                                {formatCurrency(Math.max(0, dealerCeiling.remaining))}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    {amount > 0 && amount > dealerCeiling.remaining && (
+                                        <p className="mt-3 flex items-center gap-2 rounded-lg border border-honda-100 bg-honda-50 px-3 py-2 text-xs font-medium text-honda-700">
+                                            <AlertTriangle className="h-4 w-4 shrink-0" />
+                                            Pengajuan ini melebihi sisa pagu Sales Office sebesar {formatCurrency(amount - dealerCeiling.remaining)}.
+                                        </p>
+                                    )}
                                 </div>
                             )}
 

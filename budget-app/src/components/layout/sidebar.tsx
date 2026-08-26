@@ -14,6 +14,7 @@ import {
     Globe,
     Settings,
     Users,
+    Wallet,
     Menu,
     ChevronLeft
 } from 'lucide-react';
@@ -37,6 +38,7 @@ export function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (va
     const showUserManagement = r === 'SuperAdmin';
     const showProposalTracking = r === 'SuperAdmin';
     const showSuperAdminDashboard = r === 'SuperAdmin';
+    const showBudgetManagement = r === 'SuperAdmin';
 
     const links = [
         ...(showSubmission ? [{
@@ -78,6 +80,11 @@ export function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (va
             name: 'Proposal Tracking',
             href: '/superadmin/tracking',
             icon: Settings
+        }] : []),
+        ...(showBudgetManagement ? [{
+            name: 'Pengaturan Budget',
+            href: '/superadmin/budget',
+            icon: Wallet
         }] : [])
     ];
 

@@ -8,14 +8,18 @@ import { Badge } from '@/components/ui/badge';
 import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { DownloadCloud, Check, X, Clock } from 'lucide-react';
+import { DownloadCloud, Check, X, Clock, Eye } from 'lucide-react';
 import { PageHeading } from '@/components/ui/stat-card';
 import { cn, formatCurrency } from '@/lib/utils';
 import { db } from '@/lib/firebase';
 import { collection, onSnapshot, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { ProposalDetailModal } from '@/components/proposal/proposal-detail-modal';
+import { useToast } from '@/components/ui/toast';
+import { formatProposalNumber, STATUS_LABEL } from '@/lib/proposal';
 
 export default function ApprovalsPage() {
     const { user } = useAuth();
+    const { notify } = useToast();
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'action' | 'history' | 'all'>('action');
@@ -25,6 +29,10 @@ export default function ApprovalsPage() {
     const [selectedProposal, setSelectedProposal] = useState<Proposal | null>(null);
     const [rejectComment, setRejectComment] = useState('');
     const [isUpdating, setIsUpdating] = useState(false);
+
+    // Detail inspector — every role that can see a row can open the full record
+    // behind it, so nobody has to approve a budget off a title and a number.
+    const [detailProposal, setDetailProposal] = useState<Proposal | null>(null);
 
     // Download simulation
     const [isDownloading, setIsDownloading] = useState(false);
@@ -43,6 +51,11 @@ export default function ApprovalsPage() {
             // Sort by latest updated first
             fetchedProposals.sort((a, b) => new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime());
             setProposals(fetchedProposals);
+            // The open detail view is a live window, not a snapshot: re-point it
+            // at the fresh document so an approval made here updates in place.
+            setDetailProposal((current) =>
+                current ? fetchedProposals.find((p) => p.id === current.id) ?? null : null
+            );
             setLoading(false);
         }, (error) => {
             console.error("Error fetching proposals:", error);
@@ -92,15 +105,21 @@ export default function ApprovalsPage() {
 
     const handleDownload = () => {
         setIsDownloading(true);
-        alert("Downloading Approvals Report (CSV)...");
+        notify({
+            title: 'Menyiapkan ekspor',
+            description: 'Daftar persetujuan sedang disusun menjadi berkas CSV.',
+            variant: 'info',
+        });
         setTimeout(() => setIsDownloading(false), 2000);
     };
 
-    const getStatusBadge = (status: string) => {
+    const isActionable = (proposal: Proposal) => actionRequiredProposals.some(p => p.id === proposal.id);
+
+    const getStatusBadge = (status: ProposalStatus) => {
         switch (status) {
             case 'Approved': return <Badge variant="success">Disetujui</Badge>;
             case 'Rejected': return <Badge variant="destructive">Ditolak</Badge>;
-            default: return <Badge variant="warning">{status}</Badge>;
+            default: return <Badge variant="warning">{STATUS_LABEL[status] ?? status}</Badge>;
         }
     };
 
@@ -132,9 +151,21 @@ export default function ApprovalsPage() {
                 lastUpdated: new Date().toISOString(),
                 history: arrayUnion(newHistoryItem)
             });
+
+            notify({
+                title: 'Proposal disetujui',
+                description: nextStatus === 'Approved'
+                    ? `${proposal.title} telah disetujui sepenuhnya.`
+                    : `${proposal.title} diteruskan ke ${STATUS_LABEL[nextStatus] ?? nextStatus}.`,
+                variant: 'success',
+            });
         } catch (error) {
             console.error("Error approving proposal: ", error);
-            alert("Failed to approve. Please try again.");
+            notify({
+                title: 'Gagal menyetujui',
+                description: 'Perubahan tidak tersimpan. Periksa koneksi lalu coba lagi.',
+                variant: 'error',
+            });
         } finally {
             setIsUpdating(false);
         }
@@ -160,9 +191,18 @@ export default function ApprovalsPage() {
             });
             setIsRejectModalOpen(false);
             setRejectComment('');
+            notify({
+                title: 'Proposal ditolak',
+                description: `${selectedProposal.title} dikembalikan ke pengaju beserta alasannya.`,
+                variant: 'warning',
+            });
         } catch (error) {
             console.error("Error rejecting proposal: ", error);
-            alert("Failed to reject. Please try again.");
+            notify({
+                title: 'Gagal menolak',
+                description: 'Perubahan tidak tersimpan. Periksa koneksi lalu coba lagi.',
+                variant: 'error',
+            });
         } finally {
             setIsUpdating(false);
             setSelectedProposal(null);
@@ -227,9 +267,7 @@ export default function ApprovalsPage() {
                             <TableHead className="w-[300px]">Informasi Proposal</TableHead>
                             <TableHead>Nilai & G/L</TableHead>
                             <TableHead className="w-[400px]">Alur Persetujuan</TableHead>
-                            {activeTab === 'action' && user.role !== 'User' && (
-                                <TableHead className="text-right">Tindakan</TableHead>
-                            )}
+                            <TableHead className="text-right">Tindakan</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -257,8 +295,8 @@ export default function ApprovalsPage() {
                                     <TableCell>
                                         <div className="flex flex-col gap-1">
                                             <span className="font-semibold text-slate-900 truncate" title={proposal.title}>{proposal.title}</span>
-                                            <div className="flex items-center gap-2 text-xs text-slate-500">
-                                                <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-600">{proposal.id}</span>
+                                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                                                <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-slate-600">{formatProposalNumber(proposal)}</span>
                                                 <span>•</span>
                                                 <span>{proposal.type}</span>
                                             </div>
@@ -294,32 +332,41 @@ export default function ApprovalsPage() {
                                         )}
                                     </TableCell>
 
-                                    {activeTab === 'action' && user.role !== 'User' && (
-                                        <TableCell className="text-right align-middle">
-                                            <div className="flex justify-end gap-2">
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="border-honda-200 text-honda-600 hover:bg-honda-50 hover:text-honda-700 disabled:opacity-50"
-                                                    disabled={isUpdating}
-                                                    onClick={() => {
-                                                        setSelectedProposal(proposal);
-                                                        setIsRejectModalOpen(true);
-                                                    }}
-                                                >
-                                                    <X className="mr-1 h-4 w-4" /> Tolak
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    className="bg-padi-600 hover:bg-padi-700 disabled:opacity-50"
-                                                    disabled={isUpdating}
-                                                    onClick={() => handleApprove(proposal)}
-                                                >
-                                                    <Check className="mr-1 h-4 w-4" /> Setujui
-                                                </Button>
-                                            </div>
-                                        </TableCell>
-                                    )}
+                                    <TableCell className="text-right align-middle">
+                                        <div className="flex flex-wrap justify-end gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setDetailProposal(proposal)}
+                                            >
+                                                <Eye className="mr-1 h-4 w-4" /> Detail
+                                            </Button>
+                                            {isActionable(proposal) && user.role !== 'User' && (
+                                                <>
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="border-honda-200 text-honda-600 hover:bg-honda-50 hover:text-honda-700 disabled:opacity-50"
+                                                        disabled={isUpdating}
+                                                        onClick={() => {
+                                                            setSelectedProposal(proposal);
+                                                            setIsRejectModalOpen(true);
+                                                        }}
+                                                    >
+                                                        <X className="mr-1 h-4 w-4" /> Tolak
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        className="bg-padi-600 hover:bg-padi-700 disabled:opacity-50"
+                                                        disabled={isUpdating}
+                                                        onClick={() => handleApprove(proposal)}
+                                                    >
+                                                        <Check className="mr-1 h-4 w-4" /> Setujui
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
+                                    </TableCell>
                                 </TableRow>
                             ))
                         )}
@@ -361,6 +408,38 @@ export default function ApprovalsPage() {
                 </div>
             </Modal>
 
+            {/* Full proposal record — the same view for every role, so an
+                approver and the submitter are always reading the same page. */}
+            <ProposalDetailModal
+                proposal={detailProposal}
+                isOpen={!!detailProposal}
+                onClose={() => setDetailProposal(null)}
+                actions={
+                    detailProposal && isActionable(detailProposal) && user.role !== 'User' ? (
+                        <>
+                            <Button
+                                variant="outline"
+                                className="border-honda-200 text-honda-600 hover:bg-honda-50 hover:text-honda-700"
+                                disabled={isUpdating}
+                                onClick={() => {
+                                    setSelectedProposal(detailProposal);
+                                    setDetailProposal(null);
+                                    setIsRejectModalOpen(true);
+                                }}
+                            >
+                                <X className="mr-1 h-4 w-4" /> Tolak
+                            </Button>
+                            <Button
+                                className="bg-padi-600 hover:bg-padi-700"
+                                disabled={isUpdating}
+                                onClick={() => handleApprove(detailProposal)}
+                            >
+                                <Check className="mr-1 h-4 w-4" /> Setujui
+                            </Button>
+                        </>
+                    ) : undefined
+                }
+            />
         </div>
     );
 }

@@ -91,3 +91,26 @@ export interface GLAccount {
     budgetRemaining: number;
     totalBudget: number;
 }
+
+/** Budget can be capped two ways: per sales office (dealer), and per G/L account. */
+export type BudgetScope = 'Dealer' | 'GLAccount';
+
+/**
+ * A ceiling the Super Admin sets on how much may be proposed against one
+ * dealer or one G/L account in a given period.
+ *
+ * `key` is the dealer name or the G/L code; `label` is what the screen shows,
+ * so a renamed G/L account still reads correctly against historical records.
+ */
+export interface BudgetAllocation {
+    id: string;
+    scope: BudgetScope;
+    key: string;
+    label: string;
+    totalBudget: number;
+    /** Calendar year the ceiling applies to, e.g. "2026". */
+    period: string;
+    note?: string;
+    updatedAt: string;
+    updatedBy?: string;
+}

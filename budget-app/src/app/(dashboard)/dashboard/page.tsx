@@ -15,6 +15,7 @@ import { db } from '@/lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { CHART_ACCENT, CHART_SERIES } from '@/lib/brand';
 import { PageHeading, StatCard, UtilizationBar } from '@/components/ui/stat-card';
+import { useToast } from '@/components/ui/toast';
 
 type TooltipProps = {
     active?: boolean;
@@ -35,6 +36,7 @@ function CustomTooltip({ active, payload, label }: TooltipProps) {
 
 export default function DashboardPage() {
     const { user } = useAuth();
+    const { notify } = useToast();
     const [proposals, setProposals] = useState<Proposal[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -91,7 +93,11 @@ export default function DashboardPage() {
 
     const handleDownload = () => {
         setIsDownloading(true);
-        alert("Downloading Budget Summary...");
+        notify({
+            title: 'Menyiapkan ringkasan',
+            description: 'Ringkasan budget sedang disusun untuk diunduh.',
+            variant: 'info',
+        });
         setTimeout(() => setIsDownloading(false), 2000);
     };
 

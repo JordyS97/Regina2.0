@@ -215,3 +215,76 @@
     }
   }
 }
+
+/* ============================================================================
+   Push notifications (toast).
+   A toast slides in from the right, holds long enough to be read, then fades
+   out on its own. Only transform and opacity move, so a busy page never makes
+   the notification stutter.
+   ========================================================================= */
+
+@keyframes padi-toast-in {
+  from {
+    opacity: 0;
+    transform: translate3d(1.25rem, -0.5rem, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes padi-toast-out {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(1.25rem, -0.25rem, 0) scale(0.98);
+  }
+}
+
+/* The bar drains left-to-right so the reader can see how long is left. */
+@keyframes padi-toast-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.padi-toast-in {
+  animation: padi-toast-in 260ms var(--ease-out-strong) both;
+}
+
+.padi-toast-out {
+  animation: padi-toast-out var(--toast-exit, 320ms) ease-in both;
+}
+
+.padi-toast-timer {
+  transform-origin: left center;
+  animation: padi-toast-timer var(--toast-duration, 4000ms) linear both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The arrival and departure still need to register — drop the travel,
+     keep the fade. */
+  .padi-toast-in {
+    animation-name: padi-fade;
+  }
+
+  .padi-toast-out {
+    animation-name: padi-toast-fade-out;
+  }
+
+  @keyframes padi-toast-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}
