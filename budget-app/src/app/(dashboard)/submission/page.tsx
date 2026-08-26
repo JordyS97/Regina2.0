@@ -7,7 +7,7 @@ import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { MOCK_GL_ACCOUNTS } from '@/lib/mock-data';
 import { useAuth } from '@/context/auth-context';
-import { CheckCircle2, FileText, AlertTriangle, Paperclip, Plus, Trash2, UploadCloud } from 'lucide-react';
+import { CheckCircle2, FileText, AlertTriangle, Paperclip, Plus, Trash2, UploadCloud, Printer } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { db, storage } from '@/lib/firebase';
@@ -16,6 +16,9 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Proposal, ProposalType, ItemizedCost, BudgetSource, BUDGET_SOURCE_LABEL, Dealer } from '@/lib/types';
 import { PageHeading } from '@/components/ui/stat-card';
 import { useToast } from '@/components/ui/toast';
+import { Modal } from '@/components/ui/modal';
+import { ProposalDocument, type DocumentProposal } from '@/components/proposal/proposal-document';
+import { PrintPortal, usePrintSheet } from '@/components/proposal/print-sheet';
 import { useBudgetAllocations } from '@/hooks/use-budget-allocations';
 import { useProposals } from '@/hooks/use-proposals';
 import { budgetDocId, currentBudgetPeriod, usageFor } from '@/lib/budget';
@@ -30,6 +33,8 @@ const DEFAULT_DEALER: Dealer = 'H531-SO BIMA';
 export default function SubmissionPage() {
     const { user } = useAuth();
     const { notify } = useToast();
+    const printSheet = usePrintSheet();
+    const [isDraftOpen, setIsDraftOpen] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -74,6 +79,36 @@ export default function SubmissionPage() {
             remaining: allocation.totalBudget - usage.committed,
         };
     }, [budgetSource, glAccount, allocations, periodProposals, period]);
+
+    /**
+     * The form's current contents as a document.
+     *
+     * A draft has no id and no history, so it prints with all four signature
+     * spaces blank — which is the point: this is the sheet that goes round for
+     * wet signatures before anything is submitted.
+     */
+    const draftProposal = useMemo<DocumentProposal>(() => {
+        const now = new Date().toISOString();
+        return {
+            title,
+            subtitle,
+            background,
+            description: background,
+            type: (type || 'Lain-lain') as ProposalType,
+            amount,
+            budgetSource,
+            glAccountCode: budgetSource === 'GL Account' ? glAccount : '',
+            items: budgetSource === 'GL Account' ? items : [],
+            dealer: user?.dealer ?? DEFAULT_DEALER,
+            status: 'Pending Supervisor',
+            submitterId: user?.id ?? '',
+            submitterName: user?.name,
+            submitterDepartment: user?.department,
+            dateSubmitted: now,
+            lastUpdated: now,
+            history: [],
+        };
+    }, [title, subtitle, background, type, amount, budgetSource, glAccount, items, user]);
 
     /** The pagu for the submitter's own sales office, if one has been set. */
     const dealerCeiling = useMemo(() => {
@@ -685,7 +720,17 @@ export default function SubmissionPage() {
                     <CardFooter className="flex justify-between items-center bg-slate-50/80 mt-2 px-6 py-4 rounded-b-xl border-t border-slate-100">
                         <span className="text-sm text-slate-500">Pastikan seluruh data sudah terisi dengan benar.</span>
                         <div className="flex gap-3">
-                            <Button variant="outline" type="button" className="bg-white">Cetak Draft</Button>
+                            <Button
+                                variant="outline"
+                                type="button"
+                                className="bg-white"
+                                disabled={!title.trim()}
+                                title={title.trim() ? undefined : 'Isi judul proposal terlebih dahulu'}
+                                onClick={() => setIsDraftOpen(true)}
+                            >
+                                <Printer className="mr-2 h-4 w-4" />
+                                Pratinjau &amp; Cetak Draft
+                            </Button>
                             <Button
                                 type="submit"
                                 disabled={isSubmitting || isSubmitted || isExceeding || amount <= 0}
@@ -702,6 +747,44 @@ export default function SubmissionPage() {
                     </CardFooter>
                 </form>
             </Card>
+
+            {/* Draft preview. The sheet shown here is the same component the
+                printer gets, so nothing can drift between the two. */}
+            <Modal
+                isOpen={isDraftOpen}
+                onClose={() => setIsDraftOpen(false)}
+                title="Pratinjau Draft Proposal"
+                className="max-w-[calc(210mm+4rem)]"
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-slate-500">
+                        Draft ini belum bernomor dan belum diajukan. Kolom tanda tangan Branch Head,
+                        Sub Dept Head, ADH, dan Region Head sengaja dikosongkan untuk ditandatangani manual.
+                    </p>
+
+                    <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-200 bg-slate-100 p-4">
+                        <div className="mx-auto w-fit shadow-sm ring-1 ring-slate-900/10">
+                            <ProposalDocument proposal={draftProposal} isDraft />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
+                        <Button variant="ghost" type="button" onClick={() => setIsDraftOpen(false)}>
+                            Tutup
+                        </Button>
+                        <Button type="button" onClick={printSheet}>
+                            <Printer className="mr-2 h-4 w-4" />
+                            Cetak / Simpan PDF
+                        </Button>
+                    </div>
+                </div>
+            </Modal>
+
+            {isDraftOpen && (
+                <PrintPortal>
+                    <ProposalDocument proposal={draftProposal} isDraft />
+                </PrintPortal>
+            )}
         </div>
     );
 }

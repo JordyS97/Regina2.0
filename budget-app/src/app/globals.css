@@ -288,3 +288,98 @@
     }
   }
 }
+
+/* ============================================================================
+   Printing — the proposal as a sheet of paper.
+
+   `.padi-sheet` is A4 at the size the printer will actually use, so what is on
+   screen is what comes out of the tray.
+
+   `.padi-print-root` is a portal that React mounts as a direct child of
+   <body>. That placement is the whole trick: it has no clipped, scrollable, or
+   fixed-position ancestor, so the app around it can be hidden with one rule and
+   the sheet paginates on its own. Hiding with `display` rather than
+   `visibility` matters too — a hidden-but-present layout would still occupy
+   pages and print blank sheets before the document.
+   ========================================================================= */
+
+.padi-sheet {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 16mm 15mm;
+  box-sizing: border-box;
+}
+
+/* A signature block that straddles a page break is the one thing on this
+   document that has to stay whole. */
+.padi-signatures {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* The print copy never shows on screen; the preview beside it does that job. */
+.padi-print-root {
+  display: none;
+}
+
+/* Margins belong to the page, not to the sheet.
+   As padding on `.padi-sheet` they only applied once, at the start and end of
+   the whole document — so page two of a long cost breakdown began hard against
+   the paper edge, inside the non-printable margin most printers have. On
+   `@page` they apply to every sheet that comes out of the tray. */
+@page {
+  size: A4;
+  margin: 16mm 15mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Screen-only chrome: toolbars, buttons, the app shell behind a modal. */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Everything the app rendered steps aside; the sheet takes the page. */
+  body.padi-printing > *:not(.padi-print-root) {
+    display: none !important;
+  }
+
+  body.padi-printing .padi-print-root {
+    display: block !important;
+  }
+
+  /* The @page margin box already sets the printable width and the margins,
+     so the sheet's own screen padding would double them. */
+  .padi-sheet {
+    width: auto !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+  }
+
+  /* Carry the column headings onto every page the table spills over. */
+  .padi-sheet thead {
+    display: table-header-group;
+  }
+
+  .padi-sheet tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Table rules and fills have to survive the browser's ink-saving default,
+     or the cost breakdown prints as unruled columns of numbers. */
+  .padi-sheet,
+  .padi-sheet * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

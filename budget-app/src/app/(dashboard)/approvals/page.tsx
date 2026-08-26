@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
-import { DownloadCloud, Check, X, Clock, Eye } from 'lucide-react';
+import Link from 'next/link';
+import { DownloadCloud, Check, X, Clock, Eye, Printer } from 'lucide-react';
 import { PageHeading } from '@/components/ui/stat-card';
 import { cn, formatCurrency } from '@/lib/utils';
 import { db } from '@/lib/firebase';
@@ -341,6 +342,17 @@ export default function ApprovalsPage() {
                                             >
                                                 <Eye className="mr-1 h-4 w-4" /> Detail
                                             </Button>
+                                            {/* Straight to the printable sheet, without
+                                                going through the detail view first. */}
+                                            <Link
+                                                href={`/proposal/${proposal.id}/print`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                            >
+                                                <Button variant="outline" size="sm" title="Cetak / Simpan PDF">
+                                                    <Printer className="mr-1 h-4 w-4" /> PDF
+                                                </Button>
+                                            </Link>
                                             {isActionable(proposal) && user.role !== 'User' && (
                                                 <>
                                                     <Button

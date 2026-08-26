@@ -1,7 +1,9 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Modal } from '@/components/ui/modal';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -23,6 +25,7 @@ import {
     FileText,
     Landmark,
     Paperclip,
+    Printer,
     Tag,
     User as UserIcon,
     Wallet,
@@ -312,11 +315,22 @@ export function ProposalDetailModal({
                 </Section>
             </div>
 
-            {actions && (
-                <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-4">
-                    {actions}
-                </div>
-            )}
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+                {/* Printing is available to anyone who can open the proposal —
+                    the sheet that gets signed is the same for every role. */}
+                <Link
+                    href={`/proposal/${proposal.id}/print`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    <Button variant="outline">
+                        <Printer className="mr-2 h-4 w-4" />
+                        Cetak / Simpan PDF
+                    </Button>
+                </Link>
+
+                <div className="flex flex-wrap justify-end gap-3">{actions}</div>
+            </div>
         </Modal>
     );
 }
