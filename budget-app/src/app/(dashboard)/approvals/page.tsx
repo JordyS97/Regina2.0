@@ -253,7 +253,7 @@ export default function ApprovalsPage() {
                             </TableRow>
                         ) : (
                             displayProposals.map((proposal) => (
-                                <TableRow key={proposal.id} className="hover:bg-slate-50/50 transition-colors">
+                                <TableRow key={proposal.id} className="transition-colors duration-150 hover:bg-slate-50/50">
                                     <TableCell>
                                         <div className="flex flex-col gap-1">
                                             <span className="font-semibold text-slate-900 truncate" title={proposal.title}>{proposal.title}</span>
@@ -282,10 +282,7 @@ export default function ApprovalsPage() {
                                         </div>
                                     </TableCell>
                                     <TableCell>
-                                        <div className="py-4">
-                                            {/* Timeline scales down to fit cell */}
-                                            <StatusTimeline status={proposal.status} />
-                                        </div>
+                                        <StatusTimeline compact status={proposal.status} />
                                         {/* Latest Comment (if rejected and looking at history) */}
                                         {proposal.status === 'Rejected' && activeTab === 'history' && proposal.history.find(h => h.action === 'Rejected') && (
                                             <div className="mt-2 rounded border border-honda-100 bg-honda-50 p-2 text-xs italic text-honda-700">

@@ -78,7 +78,7 @@ export function UtilizationBar({ percent }: { percent: number }) {
             aria-valuemax={100}
         >
             <div
-                className={cn('h-full rounded-full transition-[width] duration-300 ease-out-strong', fill)}
+                className={cn('h-full rounded-full transition-[width] duration-250 ease-out-strong', fill)}
                 style={{ width: `${clamped}%` }}
             />
         </div>

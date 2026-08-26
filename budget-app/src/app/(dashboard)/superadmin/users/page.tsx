@@ -9,6 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal';
+import { Select } from '@/components/ui/select';
+import { PageHeading } from '@/components/ui/stat-card';
 import { ShieldAlert, UserCog, UserPlus, KeyRound } from 'lucide-react';
 
 const ALL_ROLES: Role[] = ['User', 'Supervisor', 'SubDeptHead', 'FinanceHead', 'RegionHead', 'SuperAdmin'];
@@ -147,12 +149,12 @@ export default function UserManagementPage() {
     if (currentUser?.role !== 'SuperAdmin') {
         return (
             <div className="flex h-[80vh] items-center justify-center p-6">
-                <Card className="max-w-md text-center border-red-100 bg-red-50">
+                <Card className="max-w-md border-honda-100 bg-honda-50 text-center">
                     <CardHeader>
-                        <ShieldAlert className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                        <CardTitle className="text-red-700">Access Denied</CardTitle>
-                        <CardDescription className="text-red-600">
-                            You do not have the required permissions to view this page. This area is restricted to Super Admins.
+                        <ShieldAlert className="mx-auto mb-4 h-12 w-12 text-honda-500" />
+                        <CardTitle className="text-honda-700">Akses Ditolak</CardTitle>
+                        <CardDescription className="text-honda-700/80">
+                            Anda tidak memiliki izin untuk membuka halaman ini. Area ini khusus Super Admin.
                         </CardDescription>
                     </CardHeader>
                 </Card>
@@ -161,32 +163,32 @@ export default function UserManagementPage() {
     }
 
     return (
-        <div className="p-8 max-w-7xl mx-auto space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex flex-col gap-2">
-                    <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                        <UserCog className="h-8 w-8 text-blue-600" />
-                        User Role Management
-                    </h1>
-                    <p className="text-slate-500">
-                        Assign roles, default passwords, and operational branches to enterprise users.
-                    </p>
-                </div>
-                <Button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
-                    <UserPlus className="h-4 w-4" />
-                    Add Enterprise User
-                </Button>
-            </div>
+        <div className="mx-auto max-w-7xl space-y-6">
+            <PageHeading
+                title={
+                    <span className="flex items-center gap-2.5">
+                        <UserCog className="h-8 w-8 text-astra-600" />
+                        Manajemen Pengguna
+                    </span>
+                }
+                description="Atur peran, kata sandi awal, dan cabang operasional pengguna."
+                action={
+                    <Button onClick={() => setIsAddModalOpen(true)}>
+                        <UserPlus className="mr-2 h-4 w-4" />
+                        Tambah Pengguna
+                    </Button>
+                }
+            />
 
             <Card className="border-slate-200 shadow-sm overflow-hidden">
                 <CardHeader className="bg-slate-50 border-b border-slate-200 pb-4">
-                    <CardTitle className="text-lg text-slate-800">Enterprise Users Directory</CardTitle>
+                    <CardTitle className="text-lg text-slate-900">Direktori Pengguna</CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
                     {loading ? (
-                        <div className="p-8 text-center text-slate-500">Loading user directory...</div>
+                        <div className="flex items-center justify-center gap-3 p-10 text-slate-500"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-astra-600" />Memuat direktori pengguna…</div>
                     ) : users.length === 0 ? (
-                        <div className="p-8 text-center text-slate-500">No users found.</div>
+                        <div className="p-10 text-center text-slate-500">Belum ada pengguna terdaftar.</div>
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left">
@@ -201,10 +203,10 @@ export default function UserManagementPage() {
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {users.map((u) => (
-                                        <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
+                                        <tr key={u.id} className="transition-colors duration-150 hover:bg-slate-50/50">
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold">
+                                                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-astra-500 to-astra-700 text-xs font-bold text-white">
                                                         {u.name.charAt(0).toUpperCase()}
                                                     </div>
                                                     <span className="font-medium text-slate-900">{u.name}</span>
@@ -214,44 +216,40 @@ export default function UserManagementPage() {
                                                 {u.email}
                                             </td>
                                             <td className="px-6 py-4">
-                                                <select
+                                                <Select
                                                     value={u.role}
                                                     onChange={(e) => handleUpdateUser(u.id, 'role', e.target.value)}
                                                     disabled={updatingId === u.id || u.id === currentUser.id}
-                                                    className="w-full text-sm border-slate-200 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-                                                >
-                                                    {ALL_ROLES.map(role => (
-                                                        <option key={role} value={role}>{role}</option>
-                                                    ))}
-                                                </select>
+                                                    aria-label={`Peran untuk ${u.name}`}
+                                                    options={ALL_ROLES.map(role => ({ label: role, value: role }))}
+                                                />
                                             </td>
                                             <td className="px-6 py-4">
                                                 {u.role === 'User' ? (
-                                                    <select
+                                                    <Select
                                                         value={u.dealer || ''}
                                                         onChange={(e) => handleUpdateUser(u.id, 'dealer', e.target.value)}
                                                         disabled={updatingId === u.id}
-                                                        className="w-full text-sm border-slate-200 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-                                                    >
-                                                        <option value="">-- No Branch Assigned --</option>
-                                                        {ALL_DEALERS.map(dealer => (
-                                                            <option key={dealer} value={dealer}>{dealer}</option>
-                                                        ))}
-                                                    </select>
+                                                        aria-label={`Cabang untuk ${u.name}`}
+                                                        options={[
+                                                            { label: '— Belum ada cabang —', value: '' },
+                                                            ...ALL_DEALERS.map(dealer => ({ label: dealer, value: dealer })),
+                                                        ]}
+                                                    />
                                                 ) : (
-                                                    <span className="text-sm text-slate-400 italic">Not Applicable</span>
+                                                    <span className="text-sm italic text-slate-400">Tidak berlaku</span>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-3">
                                                     {updatingId === u.id ? (
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-                                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
-                                                            Updating
+                                                        <span className="inline-flex items-center gap-1.5 rounded-full bg-astra-50 px-2.5 py-1 text-xs font-medium text-astra-700">
+                                                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-astra-600" />
+                                                            Menyimpan
                                                         </span>
                                                     ) : (
-                                                        <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                                                            Active
+                                                        <span className="inline-flex rounded-full border border-padi-200 bg-padi-50 px-2.5 py-1 text-xs font-medium text-padi-800">
+                                                            Aktif
                                                         </span>
                                                     )}
 
@@ -259,9 +257,9 @@ export default function UserManagementPage() {
                                                         <Button
                                                             variant="ghost"
                                                             size="sm"
-                                                            className="text-slate-500 hover:text-amber-600 hover:bg-amber-50"
+                                                            className="text-slate-500 hover:bg-bulir-50 hover:text-bulir-700"
                                                             onClick={() => setResetUser(u)}
-                                                            title="Reset Password"
+                                                            title="Reset kata sandi" aria-label="Reset kata sandi"
                                                         >
                                                             <KeyRound className="h-4 w-4" />
                                                         </Button>
@@ -294,32 +292,26 @@ export default function UserManagementPage() {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Assigned Role</label>
-                        <select
+                        <Select
                             value={newRole}
                             onChange={(e) => setNewRole(e.target.value as Role)}
-                            className="w-full text-sm border-slate-200 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                        >
-                            {ALL_ROLES.map(role => (
-                                <option key={role} value={role}>{role}</option>
-                            ))}
-                        </select>
+                            options={ALL_ROLES.map(role => ({ label: role, value: role }))}
+                        />
                     </div>
                     {newRole === 'User' && (
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Operational Branch</label>
-                            <select
+                            <Select
                                 value={newDealer}
                                 onChange={(e) => setNewDealer(e.target.value as Dealer | '')}
-                                className="w-full text-sm border-slate-200 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                            >
-                                <option value="">-- No Branch Assigned --</option>
-                                {ALL_DEALERS.map(dealer => (
-                                    <option key={dealer} value={dealer}>{dealer}</option>
-                                ))}
-                            </select>
+                                options={[
+                                    { label: '— Belum ada cabang —', value: '' },
+                                    ...ALL_DEALERS.map(dealer => ({ label: dealer, value: dealer })),
+                                ]}
+                            />
                         </div>
                     )}
-                    <div className="bg-blue-50 text-blue-800 text-sm p-3 rounded border border-blue-100">
+                    <div className="rounded-lg border border-astra-100 bg-astra-50 p-3 text-sm text-astra-800">
                         Default password "<strong>NTBRegina2.0</strong>" will be assigned.
                     </div>
                     <div className="flex justify-end gap-3 mt-6">
@@ -339,7 +331,7 @@ export default function UserManagementPage() {
             >
                 <div className="space-y-4 text-sm text-slate-600">
                     <p>Are you sure you want to reset the password for <strong>{resetUser?.email}</strong>?</p>
-                    <p>Their password will be permanently changed to: <code className="bg-slate-100 px-1 py-0.5 rounded text-red-600 font-semibold">NTBRegina2.0</code></p>
+                    <p>Their password will be permanently changed to: <code className="rounded bg-slate-100 px-1 py-0.5 font-semibold text-honda-700">NTBRegina2.0</code></p>
                     <div className="flex justify-end gap-3 mt-6">
                         <Button type="button" variant="outline" onClick={() => setResetUser(null)}>Cancel</Button>
                         <Button type="button" variant="destructive" onClick={handleResetPassword} disabled={updatingId === resetUser?.id}>

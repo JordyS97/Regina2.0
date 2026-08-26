@@ -6,6 +6,13 @@ import { cn } from '@/lib/utils';
 interface StatusTimelineProps {
     status: ProposalStatus;
     skipRegionHead?: boolean;
+    /**
+     * Drops the step labels and shrinks the nodes. The labels are absolutely
+     * positioned and never wrap, so inside a table column they overrun each
+     * other into an unreadable run of words. In a dense row the shape of the
+     * chain is the information; the names live on hover.
+     */
+    compact?: boolean;
 }
 
 const steps = [
@@ -22,7 +29,14 @@ const steps = [
  * turns gold once it is approved — the harvest. Rejection is the only thing
  * in this component allowed to be Honda red.
  */
-export function StatusTimeline({ status, skipRegionHead = false }: StatusTimelineProps) {
+function statusWord(done: boolean, current: boolean, failed: boolean) {
+    if (failed) return 'ditolak';
+    if (done) return 'selesai';
+    if (current) return 'menunggu';
+    return 'belum mulai';
+}
+
+export function StatusTimeline({ status, skipRegionHead = false, compact = false }: StatusTimelineProps) {
     const activeSteps = skipRegionHead
         ? steps.filter(s => s.role !== 'RegionHead')
         : steps;
@@ -50,7 +64,7 @@ export function StatusTimeline({ status, skipRegionHead = false }: StatusTimelin
     const isApproved = status === 'Approved';
 
     return (
-        <div className="flex w-full max-w-3xl items-center">
+        <div className={cn("flex w-full items-center", compact ? "max-w-xs" : "max-w-3xl")}>
             {activeSteps.map((step, index) => {
                 const isCompleted = index < currentIndex || isApproved;
                 const isCurrent = index === currentIndex && !isRejected && !isApproved;
@@ -62,8 +76,10 @@ export function StatusTimeline({ status, skipRegionHead = false }: StatusTimelin
                     <React.Fragment key={step.id}>
                         <div className="group relative flex flex-col items-center">
                             <div
+                                title={compact ? `${step.label} — ${statusWord(isCompleted, isCurrent, isFailed)}` : undefined}
                                 className={cn(
-                                    "flex h-8 w-8 items-center justify-center rounded-full border-2 transition-colors duration-200",
+                                    "flex items-center justify-center rounded-full border-2 transition-colors duration-200",
+                                    compact ? "h-6 w-6" : "h-8 w-8",
                                     isCompleted && "border-padi-500 bg-padi-500 text-white",
                                     isHarvest && "border-bulir-400 bg-bulir-400 text-bulir-950",
                                     isCurrent && "border-astra-600 bg-white text-astra-600 ring-4 ring-astra-100",
@@ -72,22 +88,24 @@ export function StatusTimeline({ status, skipRegionHead = false }: StatusTimelin
                                 )}
                             >
                                 {isCompleted ? (
-                                    <Check className="h-4 w-4" strokeWidth={3} />
+                                    <Check className={compact ? "h-3 w-3" : "h-4 w-4"} strokeWidth={3} />
                                 ) : isFailed ? (
-                                    <X className="h-4 w-4" strokeWidth={3} />
+                                    <X className={compact ? "h-3 w-3" : "h-4 w-4"} strokeWidth={3} />
                                 ) : isCurrent ? (
-                                    <Clock className="h-4 w-4" strokeWidth={2.5} />
+                                    <Clock className={compact ? "h-3 w-3" : "h-4 w-4"} strokeWidth={2.5} />
                                 ) : (
-                                    <div className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+                                    <div className={cn("rounded-full bg-slate-200", compact ? "h-2 w-2" : "h-2.5 w-2.5")} />
                                 )}
                             </div>
-                            <span className={cn(
-                                "absolute top-10 whitespace-nowrap text-xs font-semibold",
-                                (isCompleted || isCurrent) ? "text-slate-800" : "text-slate-400",
-                                isFailed && "text-honda-600"
-                            )}>
-                                {step.label}
-                            </span>
+                            {!compact && (
+                                <span className={cn(
+                                    "absolute top-10 whitespace-nowrap text-xs font-semibold",
+                                    (isCompleted || isCurrent) ? "text-slate-800" : "text-slate-400",
+                                    isFailed && "text-honda-600"
+                                )}>
+                                    {step.label}
+                                </span>
+                            )}
                         </div>
 
                         {index < activeSteps.length - 1 && (

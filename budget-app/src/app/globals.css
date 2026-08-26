@@ -73,6 +73,17 @@
   --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ── Motion ──────────────────────────────────────────────────────────
+     A faster spinner makes the same wait feel shorter. Tailwind's default
+     is 1s, which reads as the app labouring; 0.6s reads as working.        */
+  --animate-spin: padi-spin 0.6s linear infinite;
+}
+
+@keyframes padi-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ============================================================================
@@ -177,6 +188,28 @@
   animation: padi-bloom 9s ease-in-out infinite alternate;
 }
 
+/* Cascade for groups that enter together — KPI rows, table bodies. The step
+   is deliberately short: 45ms across four cards is 135ms total, read as one
+   movement rather than a queue. Long staggers make an interface feel slow. */
+.padi-stagger > * {
+  animation: padi-rise 380ms var(--ease-out-strong) both;
+}
+
+.padi-stagger > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+.padi-stagger > *:nth-child(3) {
+  animation-delay: 90ms;
+}
+.padi-stagger > *:nth-child(4) {
+  animation-delay: 135ms;
+}
+/* Anything past the fourth lands with the fourth. A queue that keeps growing
+   stops reading as choreography and starts reading as lag. */
+.padi-stagger > *:nth-child(n + 5) {
+  animation-delay: 135ms;
+}
+
 /* Form fields cascade in behind the illustration. Short delays only —
    long ones read as the page being slow, not as choreography. */
 .padi-rise {
@@ -194,8 +227,17 @@
   }
 
   /* Keep the fade that says "this arrived"; drop the movement. */
-  .padi-enter {
+  .padi-enter,
+  .padi-stagger > * {
     animation-name: padi-fade;
+  }
+
+  .padi-stagger > *,
+  .padi-stagger > *:nth-child(2),
+  .padi-stagger > *:nth-child(3),
+  .padi-stagger > *:nth-child(4),
+  .padi-stagger > *:nth-child(n + 5) {
+    animation-delay: 0ms;
   }
 
   .padi-mote {
@@ -213,5 +255,42 @@
     to {
       opacity: 1;
     }
+  }
+}
+
+/* ============================================================================
+   Hover intent.
+   A touch device fires :hover on tap and then leaves it stuck there, so any
+   hover that *moves* something is gated behind a real pointer. Colour-only
+   hovers are left alone — they are harmless when they linger.
+   ========================================================================= */
+
+@media (hover: hover) and (pointer: fine) {
+  .padi-hover-nudge {
+    transition: transform 200ms var(--ease-out-strong);
+  }
+
+  .group:hover .padi-hover-nudge {
+    transform: translateX(2px);
+  }
+}
+
+/* Pressable surfaces that are not the Button component still owe the user
+   an acknowledgement. 140ms is under the threshold where a press starts to
+   feel like a delay. */
+.padi-press {
+  transition:
+    transform 140ms var(--ease-out-strong),
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.padi-press:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .padi-press:active {
+    transform: none;
   }
 }

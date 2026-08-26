@@ -35,7 +35,7 @@ export default function OverviewPage() {
                 description="Konsumsi dan kesehatan budget di seluruh organisasi."
             />
 
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="padi-stagger grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     label="Total Budget Enterprise"
                     value={formatCurrency(totalBudget)}

@@ -55,7 +55,7 @@ export default function ProfilePage() {
                 <form onSubmit={handleSave}>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <UserCircle className="h-5 w-5 text-blue-600" />
+                            <UserCircle className="h-5 w-5 text-astra-600" />
                             Account Details
                         </CardTitle>
                         <CardDescription>

@@ -214,7 +214,7 @@ export default function DashboardPage() {
 
             {/* KPI Cards — the crop cycle, left to right: what was sown, what
                 has been spent, what is still growing, how full the field is. */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="padi-stagger grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     label="Total Kapasitas Budget"
                     value={formatCurrency(totalBudget)}

@@ -123,7 +123,7 @@ export function Sidebar({ isOpen, setIsOpen }: { isOpen: boolean, setIsOpen: (va
                                 title={isOpen ? undefined : link.name}
                                 className={cn(
                                     "group relative flex items-center rounded-md px-3 py-2.5 text-sm font-medium",
-                                    "transition-[background-color,color] duration-150",
+                                    "transition-[transform,background-color,color] duration-150 ease-out-strong active:scale-[0.98]",
                                     isActive
                                         ? "bg-astra-600 text-white"
                                         : "text-astra-100/70 hover:bg-white/10 hover:text-white"

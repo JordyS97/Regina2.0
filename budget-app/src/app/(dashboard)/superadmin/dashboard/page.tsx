@@ -215,7 +215,7 @@ export default function SuperAdminDashboardPage() {
             </Card>
 
             {/* KPI Cards Row 1: Financial */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="padi-stagger grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     label="Budget Enterprise"
                     value={formatCurrency(totalBudget)}
@@ -248,7 +248,7 @@ export default function SuperAdminDashboardPage() {
             </div>
 
             {/* KPI Cards Row 2: Operational */}
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <div className="padi-stagger grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
                 <StatCard
                     label="Total Proposal"
                     value={totalProposals}

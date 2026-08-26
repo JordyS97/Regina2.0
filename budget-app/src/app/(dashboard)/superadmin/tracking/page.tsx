@@ -9,7 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { StatusTimeline } from '@/components/ui/status-timeline';
 import { Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { formatCurrency } from '@/lib/utils';
+import { cn, formatCurrency } from '@/lib/utils';
+import { PageHeading } from '@/components/ui/stat-card';
 
 export default function TrackingPage() {
     const { user } = useAuth();
@@ -57,8 +58,8 @@ export default function TrackingPage() {
     };
 
     const getStatusBadge = (status: string) => {
-        if (status === 'Approved') return <Badge variant="success">Approved</Badge>;
-        if (status === 'Rejected') return <Badge variant="destructive">Rejected</Badge>;
+        if (status === 'Approved') return <Badge variant="success">Disetujui</Badge>;
+        if (status === 'Rejected') return <Badge variant="destructive">Ditolak</Badge>;
         return <Badge variant="warning">{status}</Badge>;
     };
 
@@ -72,19 +73,19 @@ export default function TrackingPage() {
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
-            <div>
-                <h2 className="text-3xl font-bold tracking-tight text-slate-900">Proposal Tracking Matrix</h2>
-                <p className="text-slate-500 mt-1">Override view to trace structural bottlenecks across the organization.</p>
-            </div>
+            <PageHeading
+                title="Matriks Pelacakan Proposal"
+                description="Telusuri hambatan struktural di seluruh alur persetujuan organisasi."
+            />
 
             <Card>
                 <CardHeader className="pb-3 border-b border-slate-100">
                     <div className="flex items-center justify-between">
-                        <CardTitle>All Company Proposals</CardTitle>
+                        <CardTitle>Seluruh Proposal Perusahaan</CardTitle>
                         <div className="relative w-72">
                             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-500" />
                             <Input
-                                placeholder="Search by ID or Title..."
+                                placeholder="Cari berdasarkan ID atau judul…"
                                 className="pl-9 bg-slate-50"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
@@ -96,20 +97,20 @@ export default function TrackingPage() {
                     <Table>
                         <TableHeader className="bg-slate-50/80">
                             <TableRow>
-                                <TableHead className="pl-6">Proposal ID</TableHead>
-                                <TableHead>Branch Dealer</TableHead>
-                                <TableHead>Title & Amount</TableHead>
-                                <TableHead>Current Status</TableHead>
-                                <TableHead>Identified Bottleneck</TableHead>
-                                <TableHead className="text-center">Region Approval</TableHead>
-                                <TableHead className="pr-6 w-[350px]">Live Timeline Override</TableHead>
+                                <TableHead className="pl-6">ID Proposal</TableHead>
+                                <TableHead>Cabang Dealer</TableHead>
+                                <TableHead>Judul & Nilai</TableHead>
+                                <TableHead>Status Saat Ini</TableHead>
+                                <TableHead>Hambatan Teridentifikasi</TableHead>
+                                <TableHead className="text-center">Persetujuan Region</TableHead>
+                                <TableHead className="w-[350px] pr-6">Alur Persetujuan</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {filteredProposals.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} className="h-24 text-center text-slate-500">
-                                        No proposals found matching "{searchQuery}"
+                                        Tidak ada proposal yang cocok dengan &ldquo;{searchQuery}&rdquo;
                                     </TableCell>
                                 </TableRow>
                             ) : (
@@ -123,12 +124,12 @@ export default function TrackingPage() {
                                         </TableCell>
                                         <TableCell>
                                             <div className="font-semibold text-slate-900">{proposal.title}</div>
-                                            <div className="text-sm font-medium text-slate-600">{formatCurrency(proposal.amount)}</div>
+                                            <div className="text-sm font-medium tabular-nums text-slate-600">{formatCurrency(proposal.amount)}</div>
                                         </TableCell>
                                         <TableCell>{getStatusBadge(proposal.status)}</TableCell>
                                         <TableCell>
                                             {proposal.status.includes('Pending') ? (
-                                                <span className="inline-flex items-center rounded-md bg-orange-50 px-2 py-1 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20">
+                                                <span className="inline-flex items-center rounded-md bg-bulir-50 px-2 py-1 text-xs font-medium text-bulir-800 ring-1 ring-inset ring-bulir-300">
                                                     {getBottleneck(proposal.status)}
                                                 </span>
                                             ) : (
@@ -138,24 +139,28 @@ export default function TrackingPage() {
                                         <TableCell className="text-center">
                                             <button
                                                 onClick={() => toggleRegionApproval(proposal.id)}
-                                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${proposal.skipRegionHeadApproval ? 'bg-slate-300' : 'bg-blue-600'
-                                                    }`}
+                                                className={cn(
+                                                    'padi-press relative inline-flex h-6 w-11 items-center rounded-full',
+                                                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-astra-500 focus-visible:ring-offset-2',
+                                                    proposal.skipRegionHeadApproval ? 'bg-slate-300' : 'bg-astra-600'
+                                                )}
                                                 role="switch"
                                                 aria-checked={!proposal.skipRegionHeadApproval}
+                                                aria-label={`Persetujuan Region untuk ${proposal.title}`}
                                             >
                                                 <span
-                                                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${proposal.skipRegionHeadApproval ? 'translate-x-1' : 'translate-x-6'
-                                                        }`}
+                                                    className={cn(
+                                                        'inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ease-out-strong',
+                                                        proposal.skipRegionHeadApproval ? 'translate-x-1' : 'translate-x-6'
+                                                    )}
                                                 />
                                             </button>
-                                            <div className="text-[10px] text-slate-500 mt-1 font-medium">
-                                                {proposal.skipRegionHeadApproval ? 'Skipped' : 'Required'}
+                                            <div className="mt-1 text-[10px] font-medium text-slate-500">
+                                                {proposal.skipRegionHeadApproval ? 'Dilewati' : 'Diperlukan'}
                                             </div>
                                         </TableCell>
                                         <TableCell className="pr-6 py-4 bg-slate-50/30">
-                                            <div className="opacity-80 scale-90 origin-left">
-                                                <StatusTimeline status={proposal.status} skipRegionHead={proposal.skipRegionHeadApproval} />
-                                            </div>
+                                            <StatusTimeline compact status={proposal.status} skipRegionHead={proposal.skipRegionHeadApproval} />
                                         </TableCell>
                                     </TableRow>
                                 ))

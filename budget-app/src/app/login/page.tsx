@@ -261,7 +261,7 @@ export default function LoginPage() {
                                 ) : (
                                     <>
                                         Masuk
-                                        <ArrowRight className="ml-2 h-4 w-4 transition-transform duration-200 ease-out-strong group-hover:translate-x-0.5" />
+                                        <ArrowRight className="padi-hover-nudge ml-2 h-4 w-4" />
                                     </>
                                 )}
                             </Button>

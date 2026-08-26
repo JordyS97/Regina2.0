@@ -423,7 +423,7 @@ export default function SubmissionPage() {
                                 <div className="flex items-center justify-between">
                                     <label className="text-base font-bold text-slate-900">Rincian Biaya Pengajuan:</label>
                                 </div>
-                                <div className="border border-slate-300 rounded-lg overflow-hidden bg-white shadow-sm transition-all">
+                                <div className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-slate-100 text-slate-900 font-bold border-b border-slate-300 text-xs uppercase tracking-wider text-center">
@@ -439,7 +439,7 @@ export default function SubmissionPage() {
                                             </thead>
                                             <tbody>
                                                 {items.map((item, idx) => (
-                                                    <tr key={item.id} className="border-b border-slate-200 last:border-0 hover:bg-slate-50 transition-colors">
+                                                    <tr key={item.id} className="border-b border-slate-200 transition-colors duration-150 last:border-0 hover:bg-slate-50">
                                                         <td className="px-3 py-2 border-r border-slate-200 text-center text-slate-500 font-medium">
                                                             {idx + 1}
                                                         </td>
@@ -487,7 +487,7 @@ export default function SubmissionPage() {
                                                         </td>
                                                         <td className="px-2 py-2 text-center">
                                                             {items.length > 1 && (
-                                                                <button type="button" onClick={() => removeItem(idx)} className="rounded-md p-1 text-slate-400 transition-colors duration-150 hover:bg-honda-50 hover:text-honda-600">
+                                                                <button type="button" onClick={() => removeItem(idx)} className="padi-press rounded-md p-1 text-slate-400 hover:bg-honda-50 hover:text-honda-600">
                                                                     <Trash2 className="h-4 w-4" />
                                                                 </button>
                                                             )}
